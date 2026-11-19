@@ -234,13 +234,29 @@ evidence that supports its status. Where a mitigation is partial, the status is
 | **Manual verification** | **Only the project owner can confirm** the GitHub collaborator invite to `tarek-ragab-abdelal` and the email to `tragab@limaz.co` |
 | **Status** | `OPEN` |
 
+### R-16 - Development stack reachable from the local network
+
+| | |
+|---|---|
+| **Component** | Docker Compose port publishing |
+| **Description** | `ports: - '5433:5432'` binds to `0.0.0.0`, so a database carrying a documented, well-known development password is reachable by anyone on the same network - a cafe or office wifi, for example |
+| **Likelihood** | Medium - it is the default behaviour of a plain port mapping, and the review stack runs on laptops |
+| **Impact** | Medium for the development stack; the data is seeded, not real |
+| **Severity** | Medium |
+| **Mitigation** | All three published ports bound to `127.0.0.1` explicitly. Still fully reachable from the host, so the README instructions and host-run integration tests are unchanged |
+| **Why the password itself was not changed** | It is a development-only placeholder, documented as such in `.env.example` and the README, and the assessment permits seeded development credentials. Production values come from the platform secret manager; no image contains an `.env` (verified by F00-T12) |
+| **Automated verification** | F00-T01 to F00-T05 all still pass against loopback-bound ports |
+| **Manual verification** | `docker compose ps` shows `127.0.0.1:PORT->PORT/tcp` rather than `0.0.0.0:PORT->PORT/tcp` |
+| **Status** | `MITIGATED` |
+| **Source** | Raised by automated security review of the F00 commit, 2026-11-19 |
+
 ## Summary
 
 | Severity | Open | In progress | Mitigated | Accepted |
 |---|---|---|---|---|
 | Critical | R-01, R-02, R-03 | R-08, R-10 | R-05 | - |
 | High | R-04, R-06, R-15 | R-07 | R-12, R-14 | - |
-| Medium | R-13 | - | - | R-11 |
+| Medium | R-13 | - | R-16 | R-11 |
 | Low | - | - | - | R-09 |
 
 ## Review log
@@ -250,3 +266,4 @@ evidence that supports its status. Where a mitigation is partial, the status is
 | 2026-11-19 | Initial architecture planning | R-01 to R-06 raised |
 | 2026-11-19 | Architecture review by the project owner | R-07 to R-13 added |
 | 2026-11-19 | F00 completed | R-14 added (realised during implementation). R-05 and R-12 moved to `MITIGATED` with named evidence. R-07, R-08 and R-10 moved to `IN PROGRESS` |
+| 2026-11-19 | Automated security review of the F00 commit | R-16 added and mitigated: all published ports bound to `127.0.0.1` |
