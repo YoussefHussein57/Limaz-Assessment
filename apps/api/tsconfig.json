@@ -1,0 +1,33 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    // `nodenext` rather than the deprecated `node10`. With no "type": "module"
+    // in package.json this still emits CommonJS, which is what Nest expects,
+    // but uses Node's current resolution algorithm.
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+
+    // Required by ts-jest when the module kind is Node16/18/Next, and a good
+    // default regardless: it rejects constructs that cannot be compiled one
+    // file at a time.
+    "isolatedModules": true,
+
+    // Required by Nest's dependency injection: the decorator metadata is how
+    // the container knows which type to inject into a constructor parameter.
+    "experimentalDecorators": true,
+    "emitDecoratorMetadata": true,
+
+    "outDir": "./dist",
+    "types": ["node", "jest"],
+    "declaration": false,
+    "incremental": true,
+
+    // Nest populates injected properties through the constructor at runtime,
+    // which the compiler cannot see.
+    "strictPropertyInitialization": false
+  },
+  // Tests are type-checked but never emitted; tsconfig.build.json narrows the
+  // program for compilation.
+  "include": ["src/**/*.ts", "test/**/*.ts"],
+  "exclude": ["node_modules", "dist"]
+}

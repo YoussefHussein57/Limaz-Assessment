@@ -1,0 +1,28 @@
+# Normalise line endings so the repository is reproducible on any machine.
+#
+# WHY THIS FILE EXISTS:
+#
+# Git on Windows commonly runs with core.autocrlf=true, which rewrites LF to
+# CRLF in the working copy on checkout. For most files that is harmless. For
+# apps/api/docker-entrypoint.sh it is fatal: a CRLF shebang makes the kernel
+# look for an interpreter literally named "/bin/sh\r", and the container dies
+# with "bad interpreter: no such file or directory".
+#
+# Without this file the project builds on the machine that wrote it and breaks
+# for anyone who clones it on Windows - the exact failure risks R-05 and R-15
+# are about.
+
+# Store everything with LF in the repository; let Git decide the working copy.
+* text=auto
+
+# These must be LF in the WORKING COPY too, not just in the repository,
+# because they are consumed by Linux tooling inside containers.
+*.sh            text eol=lf
+Dockerfile      text eol=lf
+*.Dockerfile    text eol=lf
+docker-compose.yml text eol=lf
+*.prisma        text eol=lf
+.env.example    text eol=lf
+
+# Generated, reviewed rarely - keep diffs collapsed in review tools.
+package-lock.json -diff linguist-generated=true

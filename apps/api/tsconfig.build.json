@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "rootDir": "./src",
+
+    // MUST stay false. `nest-cli.json` sets `deleteOutDir: true`, so dist/ is
+    // removed before every build. With `incremental: true`, tsc then consults
+    // tsconfig.build.tsbuildinfo, concludes nothing has changed, and emits
+    // NOTHING - while still exiting 0.
+    //
+    // The result is a build that reports success and produces no output. It
+    // broke the Docker image during F00 and is only visible if you check for
+    // the artefact rather than the exit code. Test F00-T11 now asserts the
+    // artefact exists.
+    "incremental": false
+  },
+  "include": ["src/**/*.ts"],
+  "exclude": ["node_modules", "dist", "test", "**/*.spec.ts", "**/*.e2e-spec.ts"]
+}

@@ -1,0 +1,42 @@
+# Build context is the repository root (npm workspaces hoist node_modules).
+#
+# Patterns without a leading ** match only at the context root, so every
+# nested path needs its own ** form. Two bugs were caused by getting this
+# wrong during F00:
+#   1. apps/api/.env was copied into an image layer (secret leak).
+#   2. Stale *.tsbuildinfo files were copied in, so TypeScript believed the
+#      build was up to date, emitted nothing, and the image had no dist/.
+
+# dependencies
+node_modules
+**/node_modules
+
+# build output and incremental build caches
+dist
+**/dist
+.next
+**/.next
+**/*.tsbuildinfo
+coverage
+**/coverage
+
+# secrets - never in an image layer
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+
+# not needed inside an image
+.git
+.gitignore
+.github
+docs
+scripts
+README.md
+AI_LOG.md
+**/Dockerfile
+**/.dockerignore
+docker-compose.yml
+docker-compose.override.yml
+*.log

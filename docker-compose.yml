@@ -1,0 +1,91 @@
+# =============================================================================
+# LIMAZ Expense Policy Service
+#
+#   cp .env.example .env
+#   docker compose up
+#
+# That single command must start the complete application: database, API and
+# web UI. From F01 onwards the API container also applies migrations and seeds
+# the database on startup (see apps/api/docker-entrypoint.sh) - no second
+# command is ever required.
+# =============================================================================
+
+name: limaz-expense-policy
+
+services:
+  db:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-limaz}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-limaz_dev_only_password}
+      POSTGRES_DB: ${POSTGRES_DB:-limaz}
+    ports:
+      # 5433 on the host so it cannot collide with a locally installed
+      # PostgreSQL. Exposed so integration tests can run from the host.
+      - '${DB_PORT:-5433}:5432'
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      # `pg_isready` is the readiness signal. A started container is not the
+      # same thing as a database accepting connections.
+      test:
+        ['CMD-SHELL', 'pg_isready -U ${POSTGRES_USER:-limaz} -d ${POSTGRES_DB:-limaz} -q']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      API_PORT: 3001
+      DB_POOL_MAX: ${DB_POOL_MAX:-10}
+      DATABASE_URL: postgresql://${POSTGRES_USER:-limaz}:${POSTGRES_PASSWORD:-limaz_dev_only_password}@db:5432/${POSTGRES_DB:-limaz}?schema=public
+    ports:
+      # Exposed directly as well as through the web proxy: company backends
+      # authenticate with an API key, not a cookie, so they are not bound by
+      # the same-origin rule that applies to the browser.
+      - '${API_PORT:-3001}:3001'
+    depends_on:
+      db:
+        # NOT the plain `depends_on` list form. That waits for the container to
+        # start, not for PostgreSQL to accept connections, and is the usual
+        # cause of a failed first `docker compose up` (risk R-05).
+        condition: service_healthy
+    healthcheck:
+      test:
+        ['CMD-SHELL', 'wget -q -O /dev/null http://127.0.0.1:3001/health || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      # Server-side only. The browser never sees this address; it talks to the
+      # web origin and Next proxies /api/* here (ADR-008, same-origin).
+      INTERNAL_API_URL: http://api:3001
+    ports:
+      - '${WEB_PORT:-3000}:3000'
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test: ['CMD-SHELL', 'wget -q -O /dev/null http://127.0.0.1:3000/ || exit 1']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+volumes:
+  pgdata:

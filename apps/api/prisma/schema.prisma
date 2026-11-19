@@ -1,0 +1,23 @@
+// =============================================================================
+// F00 - FOUNDATION ONLY
+//
+// This schema intentionally declares NO models. Its only purpose at this stage
+// is to give the API a real, typed database connection so that /health can
+// prove the service actually reached PostgreSQL rather than merely starting.
+//
+// The business schema (companies, users, api_keys, policies, expenses,
+// rule_hits, reviews) is introduced in F01, together with the first migration.
+// See docs/features/F00-foundation.md for the agreed F00 scope boundary.
+//
+// Note: in Prisma 7 the datasource no longer carries a `url`. The CLI reads
+// the connection string from prisma.config.ts; the runtime client receives a
+// driver adapter. See docs/adr/ADR-009-prisma-7-driver-adapter.md.
+// =============================================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
