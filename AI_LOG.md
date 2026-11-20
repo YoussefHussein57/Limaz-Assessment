@@ -388,6 +388,101 @@ plus a third asserting the gateway error does not echo the internal address.
 defect gets written down as a test bug. The honest move was to ask why the
 code and the check disagreed, and both had something to say.
 
+### 19. A date that does not exist passed validation
+
+The DTO accepted `2026-02-30T09:15:00Z`. The regex matched, `Date.parse`
+returned a finite number, and the test expecting a 400 failed.
+
+`Date.parse` does not reject 30 February. February 2026 has 28 days, so it
+**rolls the surplus over** and returns **2 March** - two days past the end of
+the month. The expense would have been stored on a date the caller never
+wrote, in a different frequency window, with nothing anywhere recording that a
+substitution had happened.
+
+There is no meaningful number of days to quote here, because 30 February does
+not exist. The defect is not that the date moved by some amount; it is that
+the stored date is not the submitted one, and the rollover distance changes
+with the month and the year.
+
+**How I noticed:** the test was written from the requirement list before the
+code, so the failure arrived as a question rather than as a discovery after
+shipping.
+
+**Fix:** check the calendar fields taken from the string itself, not the
+parsed result. Against the string rather than the parsed UTC date, because an
+offset legitimately moves the UTC day - `2026-11-20T01:00:00+03:00` really is
+19 November in UTC.
+
+### 20. The advisory lock hid the mechanism the tests were supposed to prove
+
+The concurrency suite was going to be "five identical requests, assert one
+row". It passes. It also passes **with the unique index dropped entirely**,
+which I only realised when designing the negative control.
+
+The advisory lock is keyed on `(companyId, employeeId)`. Five identical
+requests share that key, so they serialise; the second finds the first's
+committed row at the idempotency read and returns 200. The INSERT is never
+attempted, so the index is never consulted.
+
+The index only decides when two requests share an `externalId` and take
+**different** lock keys - a different `employeeId`. That shape is the one
+worth testing, and it is the one the negative control uses.
+
+**The lesson:** "the test passes" and "the test exercises the mechanism" are
+different claims. The only way I found the gap was asking what would happen if
+I removed the thing I was claiming to verify.
+
+### 21. The constraint I tried to drop was not a constraint
+
+The negative control said `ALTER TABLE "expenses" DROP CONSTRAINT
+"expenses_companyId_externalId_key"` and failed with `42704 does not exist` -
+on a name the F01 tests already assert against.
+
+Prisma's `@@unique` emits `CREATE UNIQUE INDEX`, not `ALTER TABLE ... ADD
+CONSTRAINT`. The thing enforcing idempotency lives in `pg_indexes` and is
+absent from `pg_constraint`. The guarantee and the `23505` it raises are
+identical; the DDL to remove it, and the catalogue to verify it in, are not.
+
+**What the fix then exposed, which was better than the original test:**
+restoring the index failed too, with `23505 could not create unique index` -
+because the duplicate rows the negative control had just created made the
+index unbuildable. The damage is not merely detectable afterwards, it
+physically blocks the guarantee from being restored. That rejection is now an
+explicit assertion rather than a footnote.
+
+### 22. A failing assertion blew up instead of reporting
+
+`expect(evaluator.calls).toHaveLength(2)` failed with
+`RangeError: Invalid string length`. The real failure was replaced by a stack
+trace about string length.
+
+The test evaluator was recording its whole input, which includes the Prisma
+transaction client. When the assertion failed, Jest tried to serialise that
+object to print it.
+
+**Fix:** record only the five fields a test actually asserts on. The object
+being too big to print was a symptom; keeping a database client inside test
+observation state was the actual mistake.
+
+### 23. A hang that was not in the code under test
+
+The negative-control suite took 254 seconds and then hung. I had killed an
+earlier run, which left two connections attached to `limaz_test`, and
+`globalSetup` drops and recreates that database on every run - `DROP DATABASE`
+waits indefinitely while a connection is attached.
+
+**How I found it:** `pg_stat_activity` showed two idle connections and nothing
+blocked, which ruled out a deadlock in the feature and pointed at setup rather
+than at the tests.
+
+**Fix:** terminate the stale backends. After that the same suite ran in 4.7
+seconds. I also stopped piping test output into `tail`, which buffers until
+the command finishes and had been hiding every interim line.
+
+**The lesson worth keeping:** a slow or hanging test is a claim about the
+environment as much as about the code, and I nearly started optimising a
+transaction that was never slow.
+
 ## What I decided, not the AI
 
 - Holding NestJS at 11 rather than upgrading Node machine-wide or swapping the
@@ -416,6 +511,15 @@ code and the check disagreed, and both had something to say.
 - Taking two Radix primitives and writing the other seven components by hand,
   on a criterion I can state: a dependency only where the accessible behaviour
   is non-trivial.
+- Keeping the expense endpoint out of the deployed application rather than
+  shipping a stub decision, accepting that the manual test cycle cannot run
+  against the public API until F04.
+- Treating identifier normalisation as a correctness question rather than a
+  convenience one: rejecting an untrimmed externalId with 400 instead of
+  trimming it, because trimming merges two caller identities silently.
+- Taking the advisory lock in F03, which does not need it, so the transaction
+  order is built once rather than rearranged in F04 under tests that had
+  already passed.
 - Refusing to put the seeded credentials on the login page, and refusing to
   put invented figures on the dashboard, even though both make the screenshots
   look better.
@@ -433,3 +537,5 @@ code and the check disagreed, and both had something to say.
 | 2026-11-20 | F02 implementation | Three global guards, typed principal, four CSRF layers, credential redaction, the seed gate. Four defects found and fixed. 16/16 acceptance checks, 112/112 tests |
 | 2026-11-20 | F02.1 design review | Seven design and architecture decisions proposed and approved before any component was written, including the server-resolved identity model, the Radix criterion and the honest-placeholder rule |
 | 2026-11-20 | F02.1 implementation | Design tokens, 7 primitives, 2 Radix-backed components, app shell, login, logout, role gate, same-origin identity resolution. Five defects found and fixed. 18/18 scripted acceptance checks, 5 browser-verified, 15/15 contrast pairs |
+| 2026-11-20 | F03 design review | Ten-point plan agreed before any code: the F04 seam, the advisory lock's placement, the canonicalisation format, the normalisation rules, the 400/422 split and the validation ordering. The project owner added four requirements, one of which - that identifier normalisation must not merge client identities - changed the design rather than refining it |
+| 2026-11-20 | F03 implementation | Canonicalisation, two-phase validation, the full submission transaction, aborted-transaction recovery, database-error classification, a sanitised conflict body. Five defects found and fixed. 130 new tests, 242/242 passing, no production endpoint published |

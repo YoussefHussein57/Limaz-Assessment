@@ -13,15 +13,21 @@ identifier belonging to another company.
 
 ## Current state
 
-> **F00, F01, F02 and F02.1 are complete.** One
+> **F00, F01, F02, F02.1 and F03 are complete.** One
 > `docker compose up` starts the stack, applies migrations and seeds two
 > companies. Both caller types authenticate: company backends with an API key,
 > managers and the platform admin with a database-backed session. Tenant
-> isolation is enforced and tested. A person can now sign in at
+> isolation is enforced and tested. A person can sign in at
 > <http://localhost:3000>, see their own company and sign out again.
-> **No business endpoints exist yet** - expense submission, policy evaluation
-> and reviews are F03 to F05, and the workspace says so on screen rather than
-> filling itself with invented figures.
+>
+> **F03 built expense submission - but deliberately did not publish it.**
+> Validation, canonicalisation, idempotency, the transaction and the
+> concurrency handling are all implemented and tested against real
+> PostgreSQL. The endpoint is wired only inside test modules, because an
+> expense endpoint that answers `APPROVE` without evaluating the frequency
+> rule is not incomplete, it is wrong. **F04 binds the policy engine and the
+> route goes live** - one line, no migration. See
+> [`docs/features/F03-expense-submission.md`](docs/features/F03-expense-submission.md).
 >
 > This is an incremental build. Each feature is implemented, tested and
 > reviewed before the next one begins. The table below is the honest status.
@@ -32,7 +38,7 @@ identifier belonging to another company.
 | **F01** | Database schema, migrations, seed data | **Done** - 11/11 acceptance checks |
 | **F02** | API key auth, manager and admin sessions, tenant isolation | **Done** - 16/16 acceptance checks, 62 new tests |
 | **F02.1** | Design tokens, component primitives, app shell, login and logout | **Done** - 18/18 scripted checks, 5 browser-verified |
-| F03 | Expense submission and idempotency | Not started |
+| **F03** | Expense submission, canonicalisation, idempotency, concurrency | **Done** - 130 new tests. **No public endpoint until F04** |
 | F04 | Policy rules, decision precedence, frequency concurrency | Not started |
 | F05 | Review lifecycle and concurrent resolution | Not started |
 | F06 | Manager dashboard | Not started |
@@ -163,8 +169,8 @@ npm test --workspace @limaz/api
 ```
 
 ```
-Test Suites: 10 passed, 10 total
-Tests:       112 passed, 112 total
+Test Suites: 16 passed, 16 total
+Tests:       242 passed, 242 total
 ```
 
 Integration tests run against a throwaway database named `limaz_test`, dropped
@@ -198,6 +204,19 @@ Each prints a PASS/FAIL line per test id, matching
 [`docs/testing/F01-test-matrix.md`](docs/testing/F01-test-matrix.md),
 [`docs/testing/F02-test-matrix.md`](docs/testing/F02-test-matrix.md) and
 [`docs/testing/F02.1-test-matrix.md`](docs/testing/F02.1-test-matrix.md).
+
+F03 has no shell script: it is 130 Jest tests against real PostgreSQL, so
+`npm test` is the verification. Results are in
+[`docs/testing/F03-test-matrix.md`](docs/testing/F03-test-matrix.md), and the
+manual cycle - with every command labelled **RUNS TODAY** or **NEEDS F04** -
+is in [`docs/testing/F03-manual-cycle.md`](docs/testing/F03-manual-cycle.md).
+
+**No repository is mocked anywhere in F03.** A mock cannot raise `23505`,
+cannot abort a transaction and cannot serialise on an advisory lock, so a
+mocked uniqueness test asserts only that the mock agrees with the test. One
+suite is destructive - it drops the unique index to show the duplicate
+appear - and it refuses to start unless `current_database()` reads
+`limaz_test`.
 
 Five F02.1 checks are interaction behaviour - focus trap, focus return,
 double-submit, inline validation, layout at six widths. They are verified in a

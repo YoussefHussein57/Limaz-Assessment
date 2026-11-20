@@ -27,11 +27,13 @@ however much code exists for it.
 
 | Requirement | Feature | Implementation | Evidence | Status |
 |---|---|---|---|---|
-| Submit an expense, receive a decision and every reason | F03 | - | - | **PENDING** |
-| Bad input rejected cleanly, never a server error | F02 (shape), F03 | `.strict()` DTO, `HttpExceptionFilter` | F02-T27, T27b | **PARTIAL** |
-| `externalId` unique per company | F01 | `UNIQUE (companyId, externalId)` | F01-T04, F01-T05 | **PARTIAL** - constraint done, behaviour in F03 |
-| A retry creates no second expense and does not count twice | F03 | - | - | **PENDING** |
-| Correct when both requests arrive together | F03 | - | - | **PENDING** |
+| Submit an expense, receive a decision and every reason | F03 (submission), F04 (decision) | `expenses.controller.ts`, `expense-submission.service.ts` | F03-T01 | **PARTIAL** - persisted once with the policy snapshot and the evaluator called exactly once; the DECISION is F04 and is marked DEFERRED, not PASS |
+| Bad input rejected cleanly, never a server error | F02 (shape), F03 | zod `.strict()` DTO, two-phase validation, `HttpExceptionFilter` | F03-T02 to T09b | **DONE** - 400 for shape, 422 for business rules, no 500 on any invalid input |
+| `externalId` unique per company | F01 (index), F03 (behaviour) | `UNIQUE (companyId, externalId)` + conflict handling | F01-T04, F01-T05, F03-T14, F03-T20 | **DONE** |
+| A retry creates no second expense and does not count twice | F03 | canonical SHA-256 hash, in-transaction lookup | F03-T13, T13b, T13c, T23, T25 | **DONE** - the evaluator is called ONCE for three identical requests |
+| Correct when both requests arrive together | F03 | advisory lock + unique index + aborted-transaction recovery | F03-T17, T18, T19, T21, T27 | **DONE** - with a negative control showing the duplicate appears when the index is removed |
+| Money is never floating point | F03 | integer minor units, `z.int()` | F03-T05, F03-T06, ADR-005 | **DONE** |
+| The tenant is never taken from the request | F03 | `.strict()` + `tenantScope(principal)` | F03-T12, T12b, T12c | **DONE** |
 
 ## Section 4 - Policy rules
 

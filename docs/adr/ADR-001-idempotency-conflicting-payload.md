@@ -77,3 +77,84 @@ it is not a `400`; it conflicts with the current state of the resource.
 - Integration: the same body twice returns `200` and leaves exactly one row.
 - Integration: a different body returns `409` and the stored row is unchanged.
 - Concurrency: see ADR-007.
+
+---
+
+## Implementation notes, added after F03
+
+The decision above stood. Four things it did not anticipate had to be settled
+during implementation, and each changes how the record should be read.
+
+### The canonical serialisation is a fixed-order ARRAY
+
+```ts
+JSON.stringify([employeeId, amountMinor, currency, merchant, category, spentAtIso])
+```
+
+The ADR said "sorted keys". An array is better: key ordering stops being a
+property of the serialiser and becomes part of the structure, so there is no
+sorting step that a future change could get wrong.
+
+A hand-rolled delimiter was rejected for a concrete reason, not on taste.
+Joining with `|` collides - merchant `a|b` with category `C` produces the same
+string as merchant `a` with category `b|C`. JSON escapes quotes inside each
+value, so no value can impersonate a field boundary.
+
+A general-purpose canonicalisation library (RFC 8785, JCS) was considered and
+rejected: it solves nested key ordering, number-format edge cases and Unicode
+collation for arbitrary JSON. Six fields of known types do not have those
+problems, and the dependency would need defending in review.
+
+### Identifiers are compared exactly; only content is normalised
+
+"Canonicalisation means sorted keys and normalised timestamps" was too broad.
+Normalising an **identifier** merges identities: if ` exp-1` were trimmed to
+`exp-1`, a caller would receive the decision belonging to a different record,
+silently.
+
+So `externalId` and `employeeId` are never trimmed, case-folded or
+NFC-normalised. A value carrying surrounding whitespace is **rejected with
+400** rather than quietly repaired. `merchant`, `category` and `currency` are
+content and are normalised, including NFC - without it, two visually identical
+merchant names in different Unicode encodings would be a spurious 409 no
+caller could diagnose.
+
+### The normalised values are what gets stored
+
+Not only what gets hashed. Storing the raw input while hashing the normalised
+form would make a retry of a stored row conflict with itself: the column
+truncates `spentAt` to milliseconds while the hash would have covered the
+microseconds that were dropped.
+
+### The idempotency lookup runs BEFORE time-dependent validation
+
+An expense accepted ninety-one days ago is still a legitimate thing to retry.
+Shape validation is time-independent by construction, so the retry parses; the
+lookup then returns the original decision without the A4 window ever being
+consulted. The other order rejects a legitimate retry with a 422 for a rule
+the original submission satisfied, and the caller can never stop retrying.
+
+Test **F03-T25**, with **F03-T25b** proving the A4 rule still applies in full
+to anything new, and **F03-T25c** proving a conflicting resubmission of a
+stale expense is still a 409 rather than a 422.
+
+### The 409 body
+
+The ADR asked for the original decision "for reference". That required one
+optional, explicitly sanitised `details` field on the error body - restricted
+by type, not by field name, so a thrower cannot attach an entity carrying a
+hash by accident, and suppressed entirely on 5xx.
+
+The stored `payloadHash` is **never** published. Publishing it would let a
+caller brute-force the payload of an expense they cannot otherwise read, one
+guess at a time (**F03-T14c**).
+
+### What enforces the uniqueness is an INDEX, not a table constraint
+
+`@@unique([companyId, externalId])` emits `CREATE UNIQUE INDEX`, so
+`expenses_companyId_externalId_key` lives in `pg_indexes` and is absent from
+`pg_constraint`. The guarantee and the `23505` it raises are identical; the
+DDL to remove it, and the catalogue to verify it in, are not.
+
+This surfaced when the negative-control test said `DROP CONSTRAINT` and failed
+with `42704 does not exist`.

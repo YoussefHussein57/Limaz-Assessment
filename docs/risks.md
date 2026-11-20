@@ -60,9 +60,10 @@ evidence that supports its status. Where a mitigation is partial, the status is
 | **Impact** | High - breaks idempotency and double-counts toward frequency |
 | **Severity** | **Critical** |
 | **Mitigation** | `UNIQUE (company_id, external_id)`; the database rejects the second write. The application catches `23505` and returns the original decision. No check-then-insert (ADR-001) |
-| **Automated verification** | F03-T*, two simultaneous identical submissions, assert one row and two `200`s with the same decision. **F01 landed the constraint:** F01-T04 proves a duplicate within a company is rejected, F01-T05 that two companies may share an `externalId` |
-| **Manual verification** | - |
-| **Status** | `IN PROGRESS` - the constraint exists and is tested; the conflict-handling behaviour lands in F03 |
+| **Automated verification** | **F03-T17** (2 concurrent), **F03-T18** (5 concurrent, one evaluation, no duplicate side effects), **F03-T19** (concurrent conflicting payloads), **F03-T21** (the shape where the index actually decides), **F03-T27** (negative control: with the index dropped, the same race creates two rows). F01-T04 and F01-T05 proved the constraint itself |
+| **Manual verification** | `docs/testing/F03-manual-cycle.md` section 7, labelled as a smoke test - it cannot guarantee the requests overlap, which is why the automated version uses a bounded barrier |
+| **Status** | `MITIGATED` |
+| **What F03 added beyond the constraint** | The losing request no longer produces a `500`. Its transaction is aborted by the `23505`, so the outcome is resolved on a fresh connection afterwards and returned as `200` or `409`. **Re-verify in F04**, because the frequency count is a different invariant the constraint does not protect |
 
 ### R-04 - A review is resolved twice
 
@@ -373,13 +374,58 @@ evidence that supports its status. Where a mitigation is partial, the status is
 | **Manual verification** | Review every new endpoint added in F03 onwards for `tenantScope()` |
 | **Status** | `ACCEPTED` - a documentation risk, carried deliberately |
 
+### R-25 - A single expense cannot exceed the int4 range
+
+| | |
+|---|---|
+| **Component** | `Expense.amountMinor` |
+| **Description** | The column is PostgreSQL `int4`, so one expense is capped at **2,147,483,647 minor units** - 21,474,836.47 of a two-decimal currency |
+| **Likelihood** | Low for an expense-policy service; a single employee expense of 21 million riyals is not the case this system serves |
+| **Impact** | Medium - a legitimate submission refused |
+| **Severity** | **Medium** |
+| **Mitigation** | Enforced in the DTO, so the caller gets a clear `400` naming the limit rather than a `500` from PostgreSQL rejecting the insert. The boundary value itself is accepted, and tested |
+| **Residual hole** | **The cap is real.** `BigInt` would remove it and would change every arithmetic site, the JSON contract and the F04 comparisons. Not worth it against a limit nothing is near |
+| **Automated verification** | **F03-T06** |
+| **Manual verification** | - |
+| **Status** | `ACCEPTED` - with the upgrade path named |
+
+### R-26 - The canonicalisation is a public contract with no versioning
+
+| | |
+|---|---|
+| **Component** | `apps/api/src/expenses/canonical-payload.ts` |
+| **Description** | The payload hash decides which resubmissions are retries and which are conflicts. Every expense already stored was hashed under the rules in force when it arrived. Changing which fields are covered, or how they are normalised, makes every stored hash unreachable: a correct retry of an old expense would hash differently and be refused with a `409` the caller cannot resolve |
+| **Likelihood** | Medium - adding a field to the expense is an obvious F04 or F06 change, and including it in the hash looks harmless |
+| **Impact** | High - every historical expense becomes permanently conflicting |
+| **Severity** | **High** |
+| **Mitigation** | The exact canonical string is pinned by an equality assertion, so changing it requires editing a test on purpose rather than discovering it later. The file states in its own header that it is part of the public contract |
+| **Residual hole** | **No hash versioning.** A `payloadHashVersion` column, with comparison falling back to the stored version, is the real fix. Not built: it adds a column and a branch for a change nobody has needed yet |
+| **Automated verification** | The pinned canonical-string test, plus one test per covered field |
+| **Manual verification** | Re-read the header before adding a field to the expense |
+| **Status** | `ACCEPTED` - with the upgrade path named |
+
+### R-27 - Nothing prevents an expense from being deleted
+
+| | |
+|---|---|
+| **Component** | `expenses` |
+| **Description** | `Company.onDelete: Restrict` is easy to read as a deletion guard. **It is not.** It prevents deleting a *company* that still has expenses, and says nothing about deleting an expense directly - a `DELETE FROM expenses`, a Prisma `expense.delete()`, or a future retention job would all succeed, cascading `rule_hits` away with it |
+| **Why it matters beyond data loss** | Deleting an expense frees its `externalId`. A later retry of that same expense would then be treated as **new**, receive a fresh decision under whatever policy is current, and count toward a frequency window it had already contributed to |
+| **Likelihood** | Low today - nothing in the application deletes one, and no endpoint exposes it |
+| **Impact** | High - a decision silently reissued, and the audit trail broken |
+| **Severity** | **Medium** |
+| **Mitigation** | **Expense deletion is outside our supported operations**, stated in `docs/features/F03-expense-submission.md`. The `resolveLostRace()` path depends on the winning row still being there and raises an explicit `500` rather than a quiet success if it is not |
+| **Residual hole** | **The schema does not prevent it.** Retention or erasure, if ever required, needs its own design - including what happens to the freed identifier |
+| **Automated verification** | None, and that is the risk |
+| **Manual verification** | Review any future retention or admin tooling against this entry |
+| **Status** | `ACCEPTED` - stated rather than implied |
 ## Summary
 
 | Severity | Open | In progress | Mitigated | Accepted |
 |---|---|---|---|---|
-| Critical | R-02 | R-03, R-10 | R-01, R-05, R-21 | R-20 |
-| High | R-04, R-06, R-15 | - | R-07, R-08, R-12, R-14 | R-18, R-24 |
-| Medium | R-13 | - | R-16 | R-11, R-17, R-19, R-22, R-23 |
+| Critical | R-02 | R-10 | R-01, R-03, R-05, R-21 | R-20 |
+| High | R-04, R-06, R-15 | - | R-07, R-08, R-12, R-14 | R-18, R-24, R-26 |
+| Medium | R-13 | - | R-16 | R-11, R-17, R-19, R-22, R-23, R-25, R-27 |
 | Low | - | - | - | R-09 |
 
 ## Review log
@@ -394,3 +440,4 @@ evidence that supports its status. Where a mitigation is partial, the status is
 | 2026-11-20 | F02 completed | R-18, R-19 and R-20 added and accepted. R-01, R-07 and R-08 moved to MITIGATED with named F02 evidence; R-01 keeps an explicit re-verification requirement for F03, F05 and F08 |
 | 2026-11-20 | F01 completed | R-17 added and accepted. R-01 and R-03 moved to `IN PROGRESS` with named F01 evidence. R-05 re-verified now that migrations and a seed actually run. R-04 and R-08 gained supporting evidence |
 | 2026-11-20 | F02.1 completed | R-22, R-23 and R-24 added and accepted. R-22 records a stopping point on the credential redactor with its gaps stated in the code; R-24 names the risk that frontend route protection is misread as enforcement |
+| 2026-11-20 | F03 completed | R-25, R-26 and R-27 added and accepted. R-03 moved to `MITIGATED` with named F03 evidence; R-02 and R-10 keep explicit re-verification requirements for F04 |

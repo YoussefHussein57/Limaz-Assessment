@@ -11,6 +11,7 @@ The questions are written to attack **our actual choices**, not textbook theory.
 | [F01 - Database and seed](F01-database-and-seed.md) | 5 | Not yet |
 | [F02 - Authentication](F02-authentication.md) | 5 | Not yet |
 | [F02.1 - UI foundation](F02.1-ui-foundation.md) | 5 | Not yet |
+| [F03 - Expense submission](F03-expense-submission.md) | 5 | Not yet |
 
 ## Learning gaps
 
@@ -29,3 +30,8 @@ them.
 | 2026-11-20 | WCAG 1.4.11 | Non-text contrast requires 3:1 for the **visual boundary of a user interface component** - an input's edge - and does not apply to a decorative rule. One border colour cannot serve both | Noted, two border tokens |
 | 2026-11-20 | `offsetParent` | It is `null` for any `position: fixed` element, so it cannot be used to test visibility of a fixed sidebar. `getComputedStyle(el).display` can | Noted, AI_LOG 17 |
 | 2026-11-20 | RFC 3986 sub-delimiters | `,` and `;` are legal unencoded inside a URL password, so they cannot be treated as the end of the userinfo part | Noted, AI_LOG 14 |
+| 2026-11-20 | Aborted transactions | A `23505` inside a transaction puts it in an ABORTED state: every later statement, including a plain SELECT, fails with `25P02`. The winning row cannot be read there - it needs a SAVEPOINT or a re-read after the rollback | Noted, AI_LOG 21 and `resolveLostRace()` |
+| 2026-11-20 | Prisma `@@unique` DDL | It emits `CREATE UNIQUE INDEX`, not `ADD CONSTRAINT`, so the name lives in `pg_indexes` and is absent from `pg_constraint`. Same guarantee, different DDL and different catalogue | Noted, AI_LOG 21 |
+| 2026-11-20 | `Date.parse` rollover | `2026-02-30` does not fail - it returns 2 March. A date must be checked against the calendar, not against whether it parsed | Noted, AI_LOG 19 |
+| 2026-11-20 | Unique index rebuilds | PostgreSQL refuses to build a unique index over rows that violate it, so duplicates created while it was absent physically block its restoration | Noted, F03-T27 |
+| 2026-11-20 | Lock scope vs constraint scope | An advisory lock keyed on one tuple can completely hide a unique constraint keyed on another, so a concurrency test can pass with the constraint dropped | Noted, AI_LOG 20 |

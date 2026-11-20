@@ -263,3 +263,52 @@ with an approximation, and that is only worth doing against a measured problem.
 | Session-scoped lock used | Leaked lock poisons a pooled connection | `pg_advisory_xact_lock` only; reviewed in code review |
 | Pool smaller than test concurrency | Concurrency tests pass vacuously | `DB_POOL_MAX` validated at boot; negative control in the suite |
 | Count filtered by decision | Rejected expenses stop counting | Assumption A2: the count includes all decisions |
+
+---
+
+## Clarified by F03
+
+F03 built the transaction in the order this record specifies, including the
+advisory lock, and left the evaluation step as an interface. Three things the
+implementation made concrete:
+
+### The lock is taken in F03, which does not need it
+
+Idempotency is a **uniqueness** invariant and the database enforces it alone -
+F03-T28 asserts that directly, by racing two requests that take *different*
+lock keys and showing they still cannot produce two rows.
+
+The lock is taken anyway because it must be the **first statement** for the
+count that follows to see every competitor that has already committed. Adding
+it in F04 would mean reordering the transaction underneath tests that had
+already passed, which is how a correct design becomes a subtly wrong one.
+
+### The lock HIDES the unique constraint in the common case
+
+Not anticipated here, and it shapes every concurrency test:
+
+| Shape | Behaviour | Which mechanism decides |
+|---|---|---|
+| Same `employeeId` | They serialise. The second finds the first's committed row at the idempotency step and returns 200 | **The lock.** The constraint never fires |
+| Different `employeeId`, same `externalId` | Different lock keys, so both transactions reach the INSERT | **The constraint** |
+
+A concurrency suite testing only the first shape **passes with the unique
+index dropped entirely**. The negative control therefore uses the second shape
+(F03-T27); using the obvious one would have proved nothing.
+
+### The aborted-transaction path
+
+When the INSERT raises `23505`, the transaction enters an aborted state and
+every later statement fails with `25P02`. The winning row cannot be read
+inside it. F03 lets the transaction roll back completely and re-reads on a
+fresh connection; a `SAVEPOINT` before the INSERT was the alternative, and was
+rejected as raw savepoint SQL inside a Prisma interactive transaction for a
+path that is rare by construction.
+
+### The evaluator receives the transaction client explicitly
+
+`PolicyEvaluationInput.tx` is a parameter rather than something the
+implementation reaches for, because a frequency count issued outside the
+transaction would not be protected by the lock and would see a different
+snapshot - the exact failure this record exists to prevent. Making the correct
+client the one already in hand removes the opportunity.
