@@ -12,6 +12,7 @@ The questions are written to attack **our actual choices**, not textbook theory.
 | [F02 - Authentication](F02-authentication.md) | 5 | Not yet |
 | [F02.1 - UI foundation](F02.1-ui-foundation.md) | 5 | Not yet |
 | [F03 - Expense submission](F03-expense-submission.md) | 5 | Not yet |
+| [F04 - Policy engine](F04-policy-engine.md) | 5 | Not yet |
 
 ## Learning gaps
 
@@ -35,3 +36,7 @@ them.
 | 2026-11-20 | `Date.parse` rollover | `2026-02-30` does not fail - it returns 2 March. A date must be checked against the calendar, not against whether it parsed | Noted, AI_LOG 19 |
 | 2026-11-20 | Unique index rebuilds | PostgreSQL refuses to build a unique index over rows that violate it, so duplicates created while it was absent physically block its restoration | Noted, F03-T27 |
 | 2026-11-20 | Lock scope vs constraint scope | An advisory lock keyed on one tuple can completely hide a unique constraint keyed on another, so a concurrency test can pass with the constraint dropped | Noted, AI_LOG 20 |
+| 2026-11-20 | Postgres enum ordering | `ORDER BY` on an enum column uses DECLARATION order, not alphabetical. `RuleCode` is declared AMOUNT_LIMIT, FREQUENCY, BLOCKED_CATEGORY, so SQL and a JS `localeCompare` sort disagree | Noted, AI_LOG 26 |
+| 2026-11-20 | Index existence vs index use | A composite index with the range column last is the SHAPE a range scan needs; whether the planner uses it is a separate question answered only by EXPLAIN ANALYZE on representative data | Noted, AI_LOG 28 |
+| 2026-11-20 | Barrier placement | A synchronisation point inside a lock can only be reached by the lock holder, so barriers for same-key contention must sit upstream of the lock | Noted, AI_LOG 24 |
+| 2026-11-20 | What a barrier proves | Releasing N requests together proves overlap, NOT that they observed the same state. Proving a read-then-write race needs synchronisation between the read and the write | Noted, AI_LOG 25 |

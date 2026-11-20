@@ -20,14 +20,22 @@ identifier belonging to another company.
 > isolation is enforced and tested. A person can sign in at
 > <http://localhost:3000>, see their own company and sign out again.
 >
-> **F03 built expense submission - but deliberately did not publish it.**
-> Validation, canonicalisation, idempotency, the transaction and the
-> concurrency handling are all implemented and tested against real
-> PostgreSQL. The endpoint is wired only inside test modules, because an
-> expense endpoint that answers `APPROVE` without evaluating the frequency
-> rule is not incomplete, it is wrong. **F04 binds the policy engine and the
-> route goes live** - one line, no migration. See
-> [`docs/features/F03-expense-submission.md`](docs/features/F03-expense-submission.md).
+> **`POST /v1/expenses` is live.** A company backend submits an expense and
+> receives a genuine decision with every reason that contributed to it:
+> amount limit, expense frequency and blocked category, with
+> `REJECT > REVIEW > APPROVE` and no reason discarded. Retries return the
+> original decision, concurrent submissions for one employee are serialised
+> so the frequency rule cannot be bypassed, and each expense stores the
+> policy it was judged against.
+>
+> F03 built the submission around a deliberate hole - no endpoint existed
+> until a real evaluator did, because one that answers `APPROVE` without
+> evaluating the frequency rule is not incomplete, it is wrong. F04 filled
+> it with one line in `app.module.ts` and no migration. See
+> [`docs/features/F04-policy-engine.md`](docs/features/F04-policy-engine.md).
+>
+> **Still to come:** manager review resolution (F05) and the UI that shows
+> any of this (F06-F08).
 >
 > This is an incremental build. Each feature is implemented, tested and
 > reviewed before the next one begins. The table below is the honest status.
@@ -38,8 +46,8 @@ identifier belonging to another company.
 | **F01** | Database schema, migrations, seed data | **Done** - 11/11 acceptance checks |
 | **F02** | API key auth, manager and admin sessions, tenant isolation | **Done** - 16/16 acceptance checks, 62 new tests |
 | **F02.1** | Design tokens, component primitives, app shell, login and logout | **Done** - 18/18 scripted checks, 5 browser-verified |
-| **F03** | Expense submission, canonicalisation, idempotency, concurrency | **Done** - 130 new tests. **No public endpoint until F04** |
-| F04 | Policy rules, decision precedence, frequency concurrency | Not started |
+| **F03** | Expense submission, canonicalisation, idempotency, concurrency | **Done** - 130 new tests |
+| **F04** | Policy rules, decision precedence, frequency concurrency | **Done** - 63 new tests. **POST /v1/expenses is live** |
 | F05 | Review lifecycle and concurrent resolution | Not started |
 | F06 | Manager dashboard | Not started |
 | F07 | Review and policy UI | Not started |
@@ -169,8 +177,8 @@ npm test --workspace @limaz/api
 ```
 
 ```
-Test Suites: 16 passed, 16 total
-Tests:       242 passed, 242 total
+Test Suites: 21 passed, 21 total
+Tests:       305 passed, 305 total
 ```
 
 Integration tests run against a throwaway database named `limaz_test`, dropped

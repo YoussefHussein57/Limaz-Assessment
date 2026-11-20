@@ -38,7 +38,7 @@ for the database.
 
 | ID | Scenario | Expected | Verification | Result |
 |---|---|---|---|---|
-| F03-T01 | Valid new expense | Persisted exactly once | Response + row count + stored companyId | **PASS** (orchestration) · decision **DEFERRED** |
+| F03-T01 | Valid new expense | Persisted exactly once | Response + row count + stored companyId | **PASS** · decision verified in **F04-T45** |
 | F03-T01b | Policy snapshot captured (A7) | Decision-affecting fields only | Stored JSON compared to the policy | **PASS** |
 | F03-T02 | Missing required field (×7) | `400` naming the field | Status + message | **PASS** |
 | F03-T03 | Wrong field type (×5) | `400` | Status | **PASS** |
@@ -58,7 +58,7 @@ for the database.
 | F03-T12 | Body carries `companyId` | `400`; other tenant's count unchanged | Status + before/after count | **PASS** |
 | F03-T12b | Body carries `decision`/`status`/`payloadHash`/`id`/`receivedAt` | `400` each | Status | **PASS** |
 | F03-T12c | Stored tenant | Always the key holder's | Row inspection | **PASS** |
-| F03-T13 | Sequential identical retry | One row, original decision, `200` | Ids, decision, reasons, row count | **PASS** (orchestration) · decision **DEFERRED** |
+| F03-T13 | Sequential identical retry | One row, original decision, `200` | Ids, decision, reasons, row count | **PASS** · decision verified in **F04-T45** |
 | F03-T13b | Retry re-evaluation | **Evaluator called once for three requests** | Call count | **PASS** |
 | F03-T13c | Retry side effects | No second rule hit, no second review | Row counts | **PASS** |
 | F03-T13d | Equivalent body, different shape | Still a retry | `200` + one row | **PASS** |
@@ -71,7 +71,7 @@ for the database.
 | F03-T16b | Different instant with an offset | Different hash | Unit | **PASS** |
 | F03-T17 | 2 concurrent identical | Exactly one row; `[200, 201]` | Multiset of statuses + row count | **PASS** |
 | F03-T18 | 5 concurrent identical | One row, one evaluation, no duplicate side effects | Statuses, counts, one id | **PASS** |
-| F03-T19 | 3 concurrent conflicting | One `201`, two `409`; stored row **is** the winner's | Statuses + stored amount vs the 201 | **PASS** (orchestration) · decision **DEFERRED** |
+| F03-T19 | 3 concurrent conflicting | One `201`, two `409`; stored row **is** the winner's | Statuses + stored amount vs the 201 | **PASS** · decision verified in **F04-T45** |
 | F03-T20 | Same id, two companies | Two independent expenses | Ids + companyIds | **PASS** |
 | F03-T20b | Cross-tenant conflict | One company cannot block another's identifier | Both `201` | **PASS** |
 | F03-T20c | Concurrent, two companies | Both `201`, nothing contends | Statuses + rows | **PASS** |
@@ -186,39 +186,30 @@ been a new route for internal shape to reach an unauthenticated caller.
 
 ---
 
-## Deferred - requires F04
+## Was deferred to F04 - now closed
 
-**Marked `DEFERRED`, never `PASS`.**
+**RESOLVED BY F04.** Kept here as the record of what was outstanding and how it was closed - these rows were never reported as a complete PASS while the evaluator did not exist.
 
-| ID | Orchestration, verified now | Decision, requires F04 | Status of the F04 half |
+| ID | Orchestration (F03) | Decision (F04) | Status |
 |---|---|---|---|
-| **F03-T01** | **PASS** - persisted once, tenant correct, snapshot captured, evaluator called **exactly once** with the normalised expense and the company's policy | Whether `decision` and `reasons` are **correct** | **DEFERRED** |
-| **F03-T13** | **PASS** - the retry returns the stored decision without re-evaluating | That the stored decision was right to begin with | **DEFERRED** |
-| **F03-T19** | **PASS** - one winner, conflicting requests refused, stored row matches the winner | That the winner's decision reflects the policy | **DEFERRED** |
+| **F03-T01** | **PASS** - persisted once, tenant correct, snapshot captured, evaluator called exactly once | **PASS** - full response body asserted in F04-T45 | **CLOSED** |
+| **F03-T13** | **PASS** - the retry returns the stored decision without re-evaluating | **PASS** - original decision and reasons verified in F04-T45 | **CLOSED** |
+| **F03-T19** | **PASS** - one winner, conflicting requests refused | **PASS** - the winner carries a genuine decision, F04-T45 | **CLOSED** |
 
-The orchestration tests substitute the evaluator deliberately. **No test in
-this feature asserts that a decision is correct**, because F03 does not
-compute one. Nothing above is reported as a complete `PASS`.
+No test in F03 asserted that a decision was correct, because F03 did not
+compute one. F04 did, and F04-T45 re-ran these three scenarios against the
+real evaluator.
 
-### Public endpoint verification - DEFERRED
+### Public endpoint verification - CLOSED BY F04
 
-| What | Status | Why |
+| What | Status | Evidence |
 |---|---|---|
-| `POST /v1/expenses` reachable in the running application | **DEFERRED** | `ExpensesModule` is registered only in test modules, so the route returns `404` |
-| End-to-end submission through the deployed stack | **DEFERRED** | Same |
-| Manual cycle sections 1, 2, 3, 4, 6, 7 | **DEFERRED** | Same; every command in `docs/testing/F03-manual-cycle.md` is labelled **RUNS TODAY** or **NEEDS F04** |
-| Manual cycle sections 5, 8 and setup | **PASS** | The guards and the schema are live regardless of the route |
-
-### What must be rerun once F04 lands
-
-1. The three `DEFERRED` rows above, asserting the full response body.
-2. Manual cycle sections 1, 2, 3, 4, 6 and 7 against the real endpoint. The
-   expected results there do not change; only the `404` does.
-3. The F03 suites unchanged, as regression - they must still pass with the
-   real evaluator bound in place of the test one.
+| `POST /v1/expenses` reachable in the running application | **CLOSED** | `AppModule` wires `ExpensesModule.withEvaluator({ useClass: PolicyEngineEvaluator })`; verified against `docker compose up` |
+| End-to-end submission through the deployed stack | **CLOSED** | Ten manual scenarios executed and recorded in `F04-test-matrix.md` |
+| Manual cycle sections 1, 2, 3, 4, 6, 7 | **CLOSED** | Executed; results in the F04 matrix |
+| Manual cycle sections 5, 8 and setup | **PASS** | Were already runnable |
 
 ---
-
 ## Static gates
 
 | Gate | Command | Result |

@@ -483,6 +483,96 @@ the command finishes and had been hiding every interim line.
 environment as much as about the code, and I nearly started optimising a
 transaction that was never slow.
 
+### 24. A barrier that would have deadlocked the test it was written for
+
+F03's concurrency barrier lives inside the evaluator, which runs **after** the
+advisory lock. Every F03 test that used it contended on different lock keys,
+so it worked, and I had written the limitation into the code: *"it cannot be
+used for requests that share a lock key."*
+
+F04's central test is five requests for the **same** employee - the same lock
+key. Reusing the barrier would have hung every run until the timeout, and the
+cause would have looked like a database problem rather than a test-design one.
+
+**How I noticed:** the project owner flagged it in the F04 requirements before
+I wrote the test. I had written the warning in F03 and would plausibly have
+walked into it anyway, because the barrier was right there and had worked
+five times.
+
+**Fix:** a test-only interceptor that holds each request **before** the
+controller, so before the transaction and before the lock. All five are
+genuinely in flight, then race for the lock as real clients would.
+
+### 25. A pre-lock barrier proves overlap, not agreement
+
+The first negative control released five requests together with the lock
+replaced by a no-op, expecting all five to count zero and approve. That is
+**not** guaranteed: without serialisation one transaction can still count,
+insert and commit before another reaches its count, so the result would be a
+mixture that sometimes looks correct. The control would have passed
+intermittently and proved nothing - the exact failure mode a negative control
+exists to rule out.
+
+**Fix:** a second synchronisation point, after the frequency count and before
+the first write, used only when the lock is a no-op. Every competitor must
+reach it before any continues, which makes "all five counted zero" determined
+rather than likely.
+
+Pairing that second barrier with the real lock deadlocks by construction, so
+**F04-NC2 demonstrates that deadlock on purpose**, with a short timeout, so it
+is documented rather than waiting for the next person.
+
+### 26. Ordering by a Postgres enum is not alphabetical
+
+A test asserted the three rule hits came back as AMOUNT_LIMIT,
+BLOCKED_CATEGORY, FREQUENCY from `ORDER BY "ruleCode"`. They came back
+AMOUNT_LIMIT, FREQUENCY, BLOCKED_CATEGORY.
+
+`RuleCode` is a PostgreSQL enum, and ordering by one uses **declaration**
+order, not the alphabet. The API response sorts in JavaScript with
+`localeCompare` and *is* alphabetical, so the two genuinely differ.
+
+**Fix:** the assertion now records the enum order rather than working around
+it, because anything in F06 that sorts in SQL will see that sequence and the
+contract promises the other one.
+
+### 27. A manual test run contaminated itself, and the data was innocent
+
+Running the manual cycle, the first expense for an employee came back REVIEW
+when it should have been APPROVE. The obvious reading was a frequency bug.
+
+An earlier run of the same script - one whose output formatting had failed -
+had still **successfully created four expenses** for the same `emp-freq`. The
+second run inherited them.
+
+**How I noticed:** the recorded `countIncludingCurrent` was higher than the
+number of expenses the run had created, which only makes sense if rows already
+existed.
+
+**Fix:** derive the employee id from a per-run identifier, not just the
+external id. The asymmetry is the lesson worth keeping: **a reused
+`externalId` is caught immediately by the 409 or the 200; a reused
+`employeeId` is silent**, and silently wrong is the dangerous one.
+
+### 28. "The index exists" is not "the index is used"
+
+I was about to document that the composite index guarantees an index scan on
+the frequency query. The project owner asked for `EXPLAIN ANALYZE` instead.
+
+On the test database - a few dozen rows - PostgreSQL chooses a **sequential
+scan**, and is right to: scanning a tiny table is cheaper than descending an
+index. The claim would have been false in exactly the environment the tests
+run in.
+
+**What I did instead:** load 4,000 representative rows, `ANALYZE`, and print
+the real plan. It is an `Index Only Scan` with all four conditions inside
+`Index Cond` and four buffer hits. The test asserts only that the index
+appears - not the node type - so a future PostgreSQL choosing an equally
+correct plan does not fail the suite.
+
+**The lesson:** an index definition is a statement about what is *possible*,
+and only the planner's output is a statement about what *happens*.
+
 ## What I decided, not the AI
 
 - Holding NestJS at 11 rather than upgrading Node machine-wide or swapping the
@@ -520,6 +610,15 @@ transaction that was never slow.
 - Taking the advisory lock in F03, which does not need it, so the transaction
   order is built once rather than rearranged in F04 under tests that had
   already passed.
+- Keeping the policy rules in a file that cannot import Prisma, so the rule
+  tests need no database and every boundary is covered rather than sampled.
+- Making precedence a rank table rather than evaluation order, so that
+  reordering the rules is provably irrelevant instead of accidentally safe.
+- Evaluating every rule even after the decision is settled, because the
+  decision carries one piece of information and the evaluation carries three.
+- Keeping R-11 ACCEPTED rather than claiming the advisory lock addressed it.
+  The lock orders concurrent writers; out-of-order evaluation is a different
+  problem and conflating them would make the risk register useless.
 - Refusing to put the seeded credentials on the login page, and refusing to
   put invented figures on the dashboard, even though both make the screenshots
   look better.
@@ -539,3 +638,5 @@ transaction that was never slow.
 | 2026-11-20 | F02.1 implementation | Design tokens, 7 primitives, 2 Radix-backed components, app shell, login, logout, role gate, same-origin identity resolution. Five defects found and fixed. 18/18 scripted acceptance checks, 5 browser-verified, 15/15 contrast pairs |
 | 2026-11-20 | F03 design review | Ten-point plan agreed before any code: the F04 seam, the advisory lock's placement, the canonicalisation format, the normalisation rules, the 400/422 split and the validation ordering. The project owner added four requirements, one of which - that identifier normalisation must not merge client identities - changed the design rather than refining it |
 | 2026-11-20 | F03 implementation | Canonicalisation, two-phase validation, the full submission transaction, aborted-transaction recovery, database-error classification, a sanitised conflict body. Five defects found and fixed. 130 new tests, 242/242 passing, no production endpoint published |
+| 2026-11-20 | F04 design review | Ten-point proposal agreed before any code. The F03 port turned out to need no change at all, which was the clearest evidence the boundary had been drawn in the right place. The project owner added six requirements; two of them - the post-count synchronisation and EXPLAIN ANALYZE over an index claim - corrected real weaknesses in the plan rather than refining it |
+| 2026-11-20 | F04 implementation | Three pure rules, a thin evaluator, the advisory lock as an injectable seam, and the production endpoint activated. Five defects found and fixed. 63 new tests, 305/305 passing, every F03 DEFERRED row closed |

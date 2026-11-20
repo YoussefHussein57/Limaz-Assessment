@@ -27,7 +27,7 @@ however much code exists for it.
 
 | Requirement | Feature | Implementation | Evidence | Status |
 |---|---|---|---|---|
-| Submit an expense, receive a decision and every reason | F03 (submission), F04 (decision) | `expenses.controller.ts`, `expense-submission.service.ts` | F03-T01 | **PARTIAL** - persisted once with the policy snapshot and the evaluator called exactly once; the DECISION is F04 and is marked DEFERRED, not PASS |
+| Submit an expense, receive a decision and every reason | F03 (submission), F04 (decision) | `expenses.controller.ts`, `policy/policy-rules.ts` | F03-T01, **F04-T33 to T36, T43, T45** | **DONE** - the endpoint is live, decisions are genuine, and every triggered reason is persisted and returned |
 | Bad input rejected cleanly, never a server error | F02 (shape), F03 | zod `.strict()` DTO, two-phase validation, `HttpExceptionFilter` | F03-T02 to T09b | **DONE** - 400 for shape, 422 for business rules, no 500 on any invalid input |
 | `externalId` unique per company | F01 (index), F03 (behaviour) | `UNIQUE (companyId, externalId)` + conflict handling | F01-T04, F01-T05, F03-T14, F03-T20 | **DONE** |
 | A retry creates no second expense and does not count twice | F03 | canonical SHA-256 hash, in-transaction lookup | F03-T13, T13b, T13c, T23, T25 | **DONE** - the evaluator is called ONCE for three identical requests |
@@ -41,11 +41,13 @@ however much code exists for it.
 |---|---|---|---|---|
 | Per-company policy settings in the database | F01 | `Policy` model | F01-T13 | **DONE** |
 | The two companies seeded with different values | F01 | fixtures | F01-T13, F01-T18f | **DONE** |
-| Amount limit rule | F04 | - | - | **PENDING** |
-| Frequency rule | F04 | - | - | **PENDING** |
-| Blocked category rule | F04 | - | - | **PENDING** |
-| Strongest decision wins | F04 | - | - | **PENDING** |
-| The response lists every rule that fired | F04 | `RuleHit` model exists | F01-T16d | **PARTIAL** |
+| Amount limit rule | F04 | `amountLimitRule` - strictly greater than the limit | F04-T02, T03, T04 | **DONE** - the boundary is tested at 49,999 / 50,000 / 50,001 |
+| Frequency rule | F04 | `frequencyRule` + the COUNT inside the locked transaction | F04-T08 to T10, T16 to T25 | **DONE** - inclusive bounds, A2 counting, out-of-order documented |
+| Blocked category rule | F04 | `blockedCategoryRule`, both sides normalised by `normaliseCategory` | F04-T05, T06, T07, T07b | **DONE** |
+| Strongest decision wins | F04 | `decide()` over an explicit RANK table | F04-T11 to T15 | **DONE** - order-independent across all six permutations |
+| The response lists every rule that fired | F04 | no short-circuit; every rule evaluated | F04-T14, **F04-T36** | **DONE** - all three reasons persisted and returned even when REJECT wins |
+| Correct under concurrent submissions | F04 | advisory lock, first statement, READ COMMITTED | **F04-T26**, **F04-NC1** | **DONE** - with a negative control showing the rule fail when the lock is removed |
+| Historical decisions stay explainable | F04 | `policySnapshot` from the same policy object the evaluator used | F04-T40, T41, T42 | **DONE** |
 
 ## Section 5 - Reviews
 

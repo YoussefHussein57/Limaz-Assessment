@@ -89,3 +89,38 @@ This is a deliberate, documented trade-off. The risk register records it as
 - Integration: the out-of-order sequence above, asserting E4 is APPROVE and E5
   is REVIEW.
 - Concurrency: see ADR-007.
+
+---
+
+## Implemented in F04
+
+The decision above stood unchanged. Three things the record did not pin down:
+
+### The window bounds are both inclusive, and that is now asserted
+
+`[spentAt - frequencyWindowMinutes, spentAt]`, `gte` and `lte`. A row at
+exactly `spentAt - 60min` is **in** (F04-T16); the same row moved back one
+millisecond is **out** (F04-T17). The column is `Timestamptz(3)`, so a
+millisecond is representable and the distinction is real rather than a
+rounding artefact.
+
+A row at exactly the same instant as the expense being evaluated is also in
+(F04-T18b).
+
+### The count is not filtered by decision, and the reason is worth stating
+
+Assumption A2 says rejected expenses count. The practical argument: if they
+did not, an employee could reset their own window by submitting something
+certain to be rejected. Tests F04-T21 and F04-T22 cover REJECTED and
+PENDING_REVIEW rows in the window.
+
+### The out-of-order example is now a test, not a worked example
+
+F04-T24 builds exactly the sequence in this record - 10:10, 10:20, 10:30, then
+a late 10:05 - and asserts the late expense is APPROVE with no reasons, and
+that the three earlier decisions are untouched. F04-T25 then submits at 10:35
+and asserts `countIncludingCurrent: 5`.
+
+**R-11 stays ACCEPTED.** The advisory lock added in F04 orders concurrent
+writers; it does nothing about evaluating only backwards in time, and is not
+claimed to.

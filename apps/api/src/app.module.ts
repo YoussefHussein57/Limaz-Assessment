@@ -4,6 +4,8 @@ import { AuthModule } from './auth/auth.module';
 import { AuthenticationGuard, AuthorizationGuard, CsrfGuard } from './auth/guards';
 import { HttpExceptionFilter } from './common/http-exception.filter';
 import { ConfigModule } from './config/config.module';
+import { ExpensesModule } from './expenses/expenses.module';
+import { PolicyEngineEvaluator } from './expenses/policy/policy-engine.evaluator';
 import { HealthModule } from './health/health.module';
 import { PrismaModule } from './prisma/prisma.module';
 
@@ -30,7 +32,17 @@ import { PrismaModule } from './prisma/prisma.module';
  * Nest executes APP_GUARD providers in registration order.
  */
 @Module({
-  imports: [ConfigModule, PrismaModule, AuthModule, HealthModule],
+  imports: [
+    ConfigModule,
+    PrismaModule,
+    AuthModule,
+    HealthModule,
+    // F04 activates expense submission. The module cannot be imported without
+    // naming a policy evaluator, so the endpoint and the decision engine
+    // arrive together or not at all - there is no state in which
+    // POST /v1/expenses exists and cannot decide anything.
+    ExpensesModule.withEvaluator({ useClass: PolicyEngineEvaluator }),
+  ],
   providers: [
     { provide: APP_GUARD, useClass: CsrfGuard },
     { provide: APP_GUARD, useClass: AuthenticationGuard },

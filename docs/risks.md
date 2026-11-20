@@ -43,9 +43,11 @@ evidence that supports its status. Where a mitigation is partial, the status is
 | **Impact** | High - a core policy rule silently stops working |
 | **Severity** | **Critical** |
 | **Mitigation** | `pg_advisory_xact_lock(hashtext(companyId), hashtext(employeeId))` acquired as the first statement; count and insert inside one `READ COMMITTED` transaction (ADR-007) |
-| **Automated verification** | F04-T07, five simultaneous submissions, order-independent assertions, **plus a negative control** that disables the lock and must fail |
-| **Manual verification** | - |
-| **Status** | `OPEN` - lands in F04 |
+| **Automated verification** | **F04-T26** - five simultaneous distinct expenses for one employee give exactly 3 APPROVE, 2 REVIEW, 2 OPEN reviews and 2 FREQUENCY hits, with recorded counts of 4 and 5. Order-independent: the multiset of outcomes is asserted, never which request won. **F04-NC1** is the negative control - with the lock replaced by a no-op the same scenario produces **5 APPROVE, 0 reviews, 0 FREQUENCY hits** |
+| **Manual verification** | Five concurrent submissions against `docker compose up`: 3 APPROVE, 2 REVIEW, 2 open reviews |
+| **Status** | `MITIGATED` |
+| **Evidence it is genuinely exercised** | A pre-lock barrier releases all five together, so they are provably in flight at once; the recorded `countIncludingCurrent` values of 4 and 5 are only reachable if the transactions saw one another in order. The negative control adds a second synchronisation point between the count and the write, so "all five counted zero" is a determined outcome rather than a likely one |
+| **Re-verify** | Any change to the transaction order, the isolation level, or the lock key |
 
 > R-02 and R-03 look similar and have different solutions. The unique constraint
 > that fixes R-03 does nothing for R-02.
@@ -160,9 +162,11 @@ evidence that supports its status. Where a mitigation is partial, the status is
 | **Impact** | High - we would believe a guarantee is proven when nothing was exercised |
 | **Severity** | **Critical** |
 | **Mitigation** | `DB_POOL_MAX` is an explicit, validated environment variable (ADR-009 made it reachable). Test setup pins it to `10`. Every concurrency test ships with a **negative control** that disables the mechanism and must fail |
-| **Automated verification** | The negative control itself. `env.spec.ts` covers the validation of `DB_POOL_MAX` |
+| **Automated verification** | `env.spec.ts` covers `DB_POOL_MAX` validation. Every concurrency suite pins it to 10, above the concurrency used. **Both concurrency features now ship a negative control that fails without the mechanism**: F03-T27 (drop the unique index, duplicates appear) and F04-NC1 (remove the advisory lock, the frequency rule silently stops firing) |
 | **Manual verification** | Code review of every concurrency test for a matching negative control |
-| **Status** | `IN PROGRESS` - the mechanism exists and is configured; the concurrency tests land in F03 and F04 |
+| **Status** | `MITIGATED` |
+| **What closed it** | The risk was that a concurrency test could pass without exercising anything. Both mechanisms are now demonstrated to fail when removed, which is the only evidence that the passing version proves something. **F04-NC2 additionally guards the guard**: a barrier whose participants cannot all arrive fails in seconds with a named error instead of hanging |
+| **Residual** | A FUTURE concurrency test could still be written without a negative control. The convention is documented in both matrices; nothing enforces it |
 
 ### R-11 - A back-dated expense evades the frequency rule
 
@@ -175,9 +179,10 @@ evidence that supports its status. Where a mitigation is partial, the status is
 | **Severity** | Medium |
 | **Mitigation (partial)** | `spentAt` bounded to 5 minutes in the future and 90 days in the past; `receivedAt` stored on every expense so the gap is visible to a reviewer |
 | **Residual hole** | **The bypass remains possible within those bounds.** Closing it needs retroactive re-evaluation (rejected) or a sliding sub-window search (deferred) - see ADR-002 |
-| **Automated verification** | F04-T*, which **documents** the behaviour rather than preventing it |
+| **Automated verification** | **F04-T24** builds the exact sequence from ADR-002 - 10:10, 10:20, 10:30, then a late 10:05 - and asserts the late expense is APPROVE with no reasons, and that the three earlier decisions are untouched. **F04-T25** then submits at 10:35 and asserts a count of 5. These tests **document** the bypass; they do not prevent it |
 | **Manual verification** | - |
 | **Status** | `ACCEPTED` - knowingly carried, not eliminated |
+| **Explicitly NOT mitigated by the advisory lock** | The lock added in F04 orders concurrent writers. This is a property of evaluating only backwards in time, and the two are unrelated. Claiming the lock closes this would be the kind of overstatement that makes a risk register useless |
 
 ### R-12 - Cross-origin cookie misconfiguration
 
@@ -423,7 +428,7 @@ evidence that supports its status. Where a mitigation is partial, the status is
 
 | Severity | Open | In progress | Mitigated | Accepted |
 |---|---|---|---|---|
-| Critical | R-02 | R-10 | R-01, R-03, R-05, R-21 | R-20 |
+| Critical | - | - | R-01, R-02, R-03, R-05, R-10, R-21 | R-20 |
 | High | R-04, R-06, R-15 | - | R-07, R-08, R-12, R-14 | R-18, R-24, R-26 |
 | Medium | R-13 | - | R-16 | R-11, R-17, R-19, R-22, R-23, R-25, R-27 |
 | Low | - | - | - | R-09 |
@@ -441,3 +446,4 @@ evidence that supports its status. Where a mitigation is partial, the status is
 | 2026-11-20 | F01 completed | R-17 added and accepted. R-01 and R-03 moved to `IN PROGRESS` with named F01 evidence. R-05 re-verified now that migrations and a seed actually run. R-04 and R-08 gained supporting evidence |
 | 2026-11-20 | F02.1 completed | R-22, R-23 and R-24 added and accepted. R-22 records a stopping point on the credential redactor with its gaps stated in the code; R-24 names the risk that frontend route protection is misread as enforcement |
 | 2026-11-20 | F03 completed | R-25, R-26 and R-27 added and accepted. R-03 moved to `MITIGATED` with named F03 evidence; R-02 and R-10 keep explicit re-verification requirements for F04 |
+| 2026-11-20 | F04 completed | R-02 moved to `MITIGATED` with measured evidence (F04-T26 and the F04-NC1 negative control). R-10 moved to `MITIGATED`: both concurrency features now ship a control that fails when the mechanism is removed. **R-11 stays ACCEPTED** - the advisory lock does not address out-of-order evaluation and is not claimed to. R-26 re-checked: the canonicalisation contract is unchanged, `normaliseCategory` being an extraction guarded by the pinned string test |

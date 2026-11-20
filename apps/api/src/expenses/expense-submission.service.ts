@@ -11,6 +11,7 @@ import type { Company, Expense, Policy, Prisma, RuleHit } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { normaliseExpense, payloadHashOf, type NormalisedExpense } from './canonical-payload';
 import type { SubmitExpenseDto } from './dto/submit-expense.dto';
+import { FREQUENCY_LOCK, type FrequencyLock } from './frequency-lock';
 import { isExpenseIdempotencyConflict } from './idempotency-conflict';
 import {
   POLICY_EVALUATOR,
@@ -43,6 +44,7 @@ export class ExpenseSubmissionService {
   constructor(
     private readonly prisma: PrismaService,
     @Inject(POLICY_EVALUATOR) private readonly evaluator: PolicyEvaluator,
+    @Inject(FREQUENCY_LOCK) private readonly lock: FrequencyLock,
   ) {}
 
   async submit(companyId: string, dto: SubmitExpenseDto): Promise<SubmissionResult> {
@@ -93,9 +95,12 @@ export class ExpenseSubmissionService {
       // in this order once is safer than reordering it later underneath tests
       // that already passed.
       //
-      // Parameterised, never interpolated: both arguments are caller-supplied.
+      // Injected rather than inlined, so the frequency negative control can
+      // run this exact code path with the lock absent and show the rule
+      // failing. There is no flag and no environment variable - substitution
+      // is only possible through Nest's testing API (see frequency-lock.ts).
       // ---------------------------------------------------------------------
-      await tx.$executeRaw`SELECT pg_advisory_xact_lock(hashtext(${companyId}), hashtext(${normalised.employeeId}))`;
+      await this.lock.acquire(tx, companyId, normalised.employeeId);
 
       // ---------------------------------------------------------------------
       // 2. Idempotency, BEFORE the time-dependent validation.

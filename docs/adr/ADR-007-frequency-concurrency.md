@@ -238,8 +238,21 @@ test. The negative control is part of the suite, not an afterthought.
 
 ## Behaviour at 1,000 expenses per second
 
-The advisory lock is per employee, so it is not the first bottleneck; the
-transaction throughput of a single PostgreSQL instance is. In order:
+> **NOTHING IN THIS SECTION IS MEASURED.**
+>
+> No load test, no benchmark and no profiling has been run against this
+> service at any throughput. What follows is reasoning from the shape of the
+> design about where contention would be expected to appear, and the order in
+> which the options would be worth investigating. It is a plan for what to
+> measure, not a report of what was measured.
+>
+> The only performance figure anywhere in this repository is the
+> `EXPLAIN ANALYZE` of the frequency query on 4,000 rows (F04), and that is a
+> query plan on a small dataset - not a statement about throughput.
+
+The advisory lock is per employee, so it would not be expected to be the first
+bottleneck; the transaction throughput of a single PostgreSQL instance is the
+more likely candidate. In order:
 
 1. **Connection pooling** in front of PostgreSQL (PgBouncer in transaction mode,
    which is compatible with `pg_advisory_xact_lock` precisely because the lock
@@ -312,3 +325,64 @@ implementation reaches for, because a frequency count issued outside the
 transaction would not be protected by the lock and would see a different
 snapshot - the exact failure this record exists to prevent. Making the correct
 client the one already in hand removes the opportunity.
+
+---
+
+## Implemented in F04
+
+The operation order in this record is what was built, unchanged. What F04 added:
+
+### The lock is an injected dependency
+
+`FREQUENCY_LOCK` / `AdvisoryFrequencyLock`, bound inside
+`ExpensesModule.withEvaluator()`. The reason is evidence: the negative
+control has to run the **production code path** with the lock absent, or
+"the lock works" is an assertion about a test that would pass either way.
+
+There is no environment variable and no configuration flag. Substitution is
+possible only through Nest's testing `overrideProvider`, which a running
+application cannot reach.
+
+### The barrier had to move, and the record of why
+
+The F03 barrier runs inside the evaluator - **after** the lock. For requests
+with different lock keys that is fine. For requests sharing one key it
+deadlocks: only the holder can proceed, so the others never arrive.
+
+F04's five-concurrent test needs five requests for one employee, so the
+barrier became a test-only interceptor running **before** the controller.
+
+**A pre-lock barrier is necessary and not sufficient.** It proves the requests
+overlapped; it does not prove they read the same count, because without
+serialisation one transaction can still count, insert and commit before
+another reaches its count. The negative control therefore adds a *second*
+synchronisation point between the count and the first write - used only with
+the lock replaced by a no-op, because pairing it with the real lock deadlocks
+by construction. F04-NC2 demonstrates that deadlock deliberately, so it is not
+a trap for the next person.
+
+### What the negative control measured
+
+With the lock: 3 APPROVE, 2 REVIEW, 2 open reviews, FREQUENCY counts of 4 and 5.
+Without it: **5 APPROVE, 0 reviews, 0 FREQUENCY hits** - and no error anywhere.
+
+In the same unlocked run, five distinct `externalId` values produced five
+rows and no duplicates: the unique index still did its job. That is this
+record's central claim made concrete - two guarantees, two mechanisms,
+neither covering the other.
+
+### The query plan, measured rather than assumed
+
+The index `(company_id, employee_id, spent_at)` has the range column last,
+which is the shape a range scan needs. On 4,000 rows after `ANALYZE`,
+PostgreSQL chose an **Index Only Scan** with all four conditions in
+`Index Cond` and four buffer hits. On a small table it chooses a sequential
+scan instead, and is right to - which is why this is measured on
+representative data rather than claimed from the index definition.
+
+### The lock does not cover the policy row
+
+It is keyed on (company, employee). A policy update can commit between two
+expenses in the same window, so they legitimately carry different snapshots.
+That is correct point-in-time evaluation, and it is why the snapshot on each
+expense *is* the policy version - no versioning system is required.

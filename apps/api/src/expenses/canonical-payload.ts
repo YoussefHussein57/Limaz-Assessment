@@ -101,10 +101,9 @@ export function normaliseExpense(input: CanonicalExpenseInput): NormalisedExpens
     // a real change the caller made.
     merchant: collapseWhitespace(input.merchant.normalize('NFC').trim()),
 
-    // Uppercased because the schema stores it uppercase, so that blocked-list
-    // matching in F04 is an exact comparison rather than a case-insensitive
-    // search (see the comment on Expense.category).
-    category: collapseWhitespace(input.category.normalize('NFC').trim()).toUpperCase(),
+    // See normaliseCategory below. Extracted rather than inlined so that F04's
+    // blocked-list matching uses the SAME function on both sides.
+    category: normaliseCategory(input.category),
 
     // A JS Date is already millisecond-precision, which is exactly the
     // precision of the Timestamptz(3) column. Constructing a new Date makes
@@ -146,6 +145,28 @@ export function canonicalString(normalised: NormalisedExpense): string {
 /** SHA-256 of the canonical string, hex encoded. */
 export function payloadHashOf(normalised: NormalisedExpense): string {
   return createHash('sha256').update(canonicalString(normalised), 'utf8').digest('hex');
+}
+
+/**
+ * The one definition of what a category string means.
+ *
+ * Used in two places that MUST agree:
+ *
+ *   1. Normalising the submitted expense, for storage and for the hash.
+ *   2. Normalising each entry of a company's `blockedCategories` before
+ *      comparing (F04).
+ *
+ * If those two used different rules, a policy saved as ` gambling ` would
+ * silently fail to block an expense in `GAMBLING` - a policy rule that appears
+ * configured and does nothing. One function removes the possibility.
+ *
+ * NOTE: this is an EXTRACTION of logic that was already inline in
+ * `normaliseExpense`, character for character. It does not change the frozen
+ * canonicalisation contract, and `canonical-payload.spec.ts` pins the exact
+ * output string, so any drift fails there.
+ */
+export function normaliseCategory(value: string): string {
+  return collapseWhitespace(value.normalize('NFC').trim()).toUpperCase();
 }
 
 function collapseWhitespace(value: string): string {
