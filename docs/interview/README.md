@@ -13,6 +13,7 @@ The questions are written to attack **our actual choices**, not textbook theory.
 | [F02.1 - UI foundation](F02.1-ui-foundation.md) | 5 | Not yet |
 | [F03 - Expense submission](F03-expense-submission.md) | 5 | Not yet |
 | [F04 - Policy engine](F04-policy-engine.md) | 5 | Not yet |
+| [F05 - Review lifecycle](F05-review-lifecycle.md) | 5 | Not yet |
 
 ## Learning gaps
 
@@ -40,3 +41,8 @@ them.
 | 2026-11-20 | Index existence vs index use | A composite index with the range column last is the SHAPE a range scan needs; whether the planner uses it is a separate question answered only by EXPLAIN ANALYZE on representative data | Noted, AI_LOG 28 |
 | 2026-11-20 | Barrier placement | A synchronisation point inside a lock can only be reached by the lock holder, so barriers for same-key contention must sit upstream of the lock | Noted, AI_LOG 24 |
 | 2026-11-20 | What a barrier proves | Releasing N requests together proves overlap, NOT that they observed the same state. Proving a read-then-write race needs synchronisation between the read and the write | Noted, AI_LOG 25 |
+| 2026-11-20 | EvalPlanQual | When a blocked UPDATE is released, PostgreSQL RE-EVALUATES its WHERE against the updated row rather than proceeding. That re-check is what makes `UPDATE ... WHERE state = 'OPEN'` safe at READ COMMITTED, and what an in-memory check skips entirely | Noted, ADR-004 and F05-NC1 |
+| 2026-11-20 | `now()` vs `clock_timestamp()` | `now()` is the TRANSACTION START time, not the statement's. For an audit field recording when something took effect under contention, the two can differ by however long the row lock was held | Noted, F05 |
+| 2026-11-20 | Lost updates vs transactions | A transaction gives atomicity and isolation, NOT protection from a lost update: two transactions can read the same row and both write it. Only a predicate in the mutation prevents it | Noted, F05-NC1 |
+| 2026-11-20 | supertest laziness | A `Test` object does not send its request until `.then()` is called. Assigning one to a variable and awaiting it later means it never overlapped with anything | Noted, AI_LOG 29 |
+| 2026-11-20 | Prisma and column defaults | Prisma supplies `@default(now())` values from the client per row, so the database's `DEFAULT CURRENT_TIMESTAMP` never fires and rows in one transaction do not share a timestamp | Noted, AI_LOG 31 |

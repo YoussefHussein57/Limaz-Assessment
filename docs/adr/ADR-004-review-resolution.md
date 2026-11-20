@@ -108,3 +108,61 @@ body.
 - Integration: company A attempts to resolve company B's review, assert `404`
   and that the review is untouched.
 - Integration: retry by the same manager with the same outcome returns `200`.
+
+---
+
+## Implemented in F05
+
+The decision above stood. Four things it did not pin down:
+
+### `clock_timestamp()`, not `now()`
+
+The SQL in this record says `now()`. That returns the **transaction start**
+time, and under contention a resolution transaction may have waited on the
+row lock for some time before its UPDATE ran. The audit field is meant to
+record when the manager's decision took effect, not when their request opened
+a transaction, so `clock_timestamp()` is used instead.
+
+The value is computed **once**, in a `FROM (SELECT clock_timestamp() AS at)`
+clause, and written to both `resolvedAt` and `updatedAt` - two separate calls
+would return two different instants and the columns could disagree.
+
+`updatedAt` is set explicitly because Prisma's `@updatedAt` is applied by the
+client and a raw statement bypasses it. Without that line the column would
+silently keep its creation value.
+
+### Zero rows has a FOURTH case
+
+The table in this record lists three. There is a fourth, and it must not be
+folded into the others: the review exists, belongs to this company, and is
+still `OPEN` - yet the conditional update matched nothing. That is a
+contradiction, not a retry, and it answers **500**. Reporting success there
+would be the worst available answer.
+
+### Exactly one TRANSITION is not exactly one 200
+
+The `200`-on-retry in this record means two concurrent identical requests from
+the same manager produce **two 200 responses and one state transition**. That
+satisfies the assessment, which requires exactly one successful state
+transition; the replay path performs **no writes at all**.
+
+F05-T34 asserts it by comparing `updatedAt` before and after, rather than by
+trusting the status code.
+
+### No advisory lock, deliberately
+
+F04 added one for the frequency count. It is not used here, and the
+difference is worth stating: F04's invariant is a COUNT across many rows - a
+read-then-write over a *set*, which no row lock can protect because there is
+no single row to lock. This invariant is one row's state transition, which a
+row lock plus PostgreSQL's predicate re-evaluation protects exactly. An
+advisory lock here would serialise unrelated reviews for no gain.
+
+### The negative control
+
+Removing `AND state = 'OPEN'` from the mutation while keeping the in-memory
+check makes both competing managers succeed; the second overwrites the
+first's outcome, reviewer and timestamp, and **nothing raises an error**.
+Measured in F05-NC1, with both halves running in real transactions - which is
+the point: a transaction gives atomicity and isolation, not protection from a
+lost update.

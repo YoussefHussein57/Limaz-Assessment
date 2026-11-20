@@ -78,8 +78,11 @@ evidence that supports its status. Where a mitigation is partial, the status is
 | **Severity** | High |
 | **Mitigation** | Single conditional `UPDATE ... WHERE id = $1 AND company_id = $2 AND state = 'OPEN'`; review and expense updated in one transaction; `rowCount = 0` yields `409` (ADR-004) |
 | **Automated verification** | F05-T*, two simultaneous resolves, assert exactly one `200`, one `409`, one audit record. **F01 landed the supporting constraints:** `UNIQUE (expenseId)` (F01-T06), the composite tenant key (F01-T09), and `reviews_state_resolution_check`, which makes a resolved review with no recorded reviewer unstorable (F01-T12) |
-| **Manual verification** | Two browser sessions |
-| **Status** | `OPEN` - the constraints are in place; the conditional UPDATE lands in F05 |
+| **Manual verification** | Approve, then approve again (200), then reject (409), against `docker compose up` |
+| **Status** | `MITIGATED` |
+| **Measured evidence** | **F05-T31** two managers with opposite decisions: one 200, one 409, stored state is the winner's. **F05-T33** five managers: exactly one 200, four 409, no 5xx, every loser naming the same winner. **F05-T44** a resolved review cannot have its reviewer or timestamp overwritten by any later attempt. **F05-NC1** is the negative control: with `AND state = 'OPEN'` removed from the mutation, both managers succeed and the second overwrites the first's outcome, reviewer and timestamp, with no error raised anywhere |
+| **Contention proven, not inferred** | `pg_blocking_pids()` is polled from a separate connection with a bounded timeout until PostgreSQL reports a backend blocked on another |
+| **Re-verify** | Any change to the UPDATE predicate, the transaction boundary, or the isolation level |
 
 ### R-05 - Stack fails to start from a clean clone
 
@@ -429,7 +432,7 @@ evidence that supports its status. Where a mitigation is partial, the status is
 | Severity | Open | In progress | Mitigated | Accepted |
 |---|---|---|---|---|
 | Critical | - | - | R-01, R-02, R-03, R-05, R-10, R-21 | R-20 |
-| High | R-04, R-06, R-15 | - | R-07, R-08, R-12, R-14 | R-18, R-24, R-26 |
+| High | R-06, R-15 | - | R-04, R-07, R-08, R-12, R-14 | R-18, R-24, R-26 |
 | Medium | R-13 | - | R-16 | R-11, R-17, R-19, R-22, R-23, R-25, R-27 |
 | Low | - | - | - | R-09 |
 
@@ -447,3 +450,4 @@ evidence that supports its status. Where a mitigation is partial, the status is
 | 2026-11-20 | F02.1 completed | R-22, R-23 and R-24 added and accepted. R-22 records a stopping point on the credential redactor with its gaps stated in the code; R-24 names the risk that frontend route protection is misread as enforcement |
 | 2026-11-20 | F03 completed | R-25, R-26 and R-27 added and accepted. R-03 moved to `MITIGATED` with named F03 evidence; R-02 and R-10 keep explicit re-verification requirements for F04 |
 | 2026-11-20 | F04 completed | R-02 moved to `MITIGATED` with measured evidence (F04-T26 and the F04-NC1 negative control). R-10 moved to `MITIGATED`: both concurrency features now ship a control that fails when the mechanism is removed. **R-11 stays ACCEPTED** - the advisory lock does not address out-of-order evaluation and is not claimed to. R-26 re-checked: the canonicalisation contract is unchanged, `normaliseCategory` being an extraction guarded by the pinned string test |
+| 2026-11-20 | F05 completed | R-04 moved to `MITIGATED` with measured evidence (F05-T31, T33, T44 and the F05-NC1 negative control, with lock contention confirmed through `pg_blocking_pids()`). R-11 re-checked and left `ACCEPTED` - nothing in F05 touches out-of-order evaluation. R-27 re-checked: review resolution performs no deletes, and `Review -> Expense` is `onDelete: Restrict`, so a resolved review makes its expense harder to delete rather than easier |

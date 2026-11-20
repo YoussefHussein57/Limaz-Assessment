@@ -8,6 +8,7 @@ import { ExpensesModule } from './expenses/expenses.module';
 import { PolicyEngineEvaluator } from './expenses/policy/policy-engine.evaluator';
 import { HealthModule } from './health/health.module';
 import { PrismaModule } from './prisma/prisma.module';
+import { ReviewsModule } from './reviews/reviews.module';
 
 /**
  * The guards are registered GLOBALLY and in this order. Both facts are
@@ -42,6 +43,10 @@ import { PrismaModule } from './prisma/prisma.module';
     // arrive together or not at all - there is no state in which
     // POST /v1/expenses exists and cannot decide anything.
     ExpensesModule.withEvaluator({ useClass: PolicyEngineEvaluator }),
+    // F05: the manager review lifecycle. An ordinary module - unlike expenses
+    // it has no dependency that had to exist before the routes could be
+    // published.
+    ReviewsModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: CsrfGuard },

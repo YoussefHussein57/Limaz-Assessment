@@ -53,11 +53,15 @@ however much code exists for it.
 
 | Requirement | Feature | Implementation | Evidence | Status |
 |---|---|---|---|---|
-| A REVIEW decision opens a review | F05 | `Review` model, `UNIQUE (expenseId)` | F01-T06, T16 | **PARTIAL** |
-| A manager approves or rejects, setting the final status | F05 | `decision` and `status` are separate | F01-T11b | **PARTIAL** |
-| Exactly one of two simultaneous resolves wins | F05 | - | - | **PENDING** |
-| The reviewer is the logged-in manager, never a caller value | F02 + F05 | principal from session only | F02-T15 | **PARTIAL** |
-| A record of who resolved each review, when and how | F01 | `reviews_state_resolution_check` makes it unstorable otherwise | F01-T12, T12c | **DONE** |
+| A REVIEW decision opens a review | F04 (creation), F05 (lifecycle) | review created in the submission transaction, A8 | F04-T34, F04-T35b | **DONE** |
+| A manager lists their company reviews | F05 | `GET /v1/reviews`, keyset paging, tenant in the query | F05-T01 to T03, T08 | **DONE** |
+| A manager inspects an expense and every reason | F05 | `GET /v1/reviews/:id` with snapshot and rule hits | F05-T04, T07 | **DONE** |
+| A manager approves or rejects, setting the final status | F05 | conditional UPDATE + expense update in one transaction | F05-T21, T22 | **DONE** |
+| Exactly one of two simultaneous resolves wins | F05 | `UPDATE ... WHERE state = 'OPEN'` + EvalPlanQual re-check | **F05-T31, T33, T34, NC1** | **DONE** - with a negative control showing the lost update when the predicate is removed |
+| The reviewer is the logged-in manager, never a caller value | F02 + F05 | principal from session; `.strict()` DTO refuses any reviewer field | F05-T14, T15, T23 | **DONE** |
+| A record of who resolved each review, when and how | F01 (constraint), F05 (writes it) | `reviews_state_resolution_check`; `clock_timestamp()` written once to both columns | F01-T12, F05-T23, T44 | **DONE** |
+| The original automated decision survives human resolution | F05 | `decision` never written by resolution | F05-T24, T25, T29 | **DONE** |
+| A manager cannot touch another company review | F02 + F05 | tenant predicate inside the query and the mutation | F05-T06, T13, T37 | **DONE** |
 
 ## Section 6 - The UI
 

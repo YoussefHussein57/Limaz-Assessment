@@ -573,6 +573,76 @@ correct plan does not fail the suite.
 **The lesson:** an index definition is a statement about what is *possible*,
 and only the planner's output is a statement about what *happens*.
 
+### 29. A "concurrent" request that never left the starting line
+
+A test held a row lock in one transaction, dispatched a competing HTTP
+request, and polled `pg_blocking_pids()` expecting to see it blocked.
+Nothing was ever blocked.
+
+A supertest `Test` object is **lazy**: it does not send its request until
+`.then()` is called. `const competitor = resolve(...)` creates it and sends
+nothing. Awaiting it at the end of the test dispatched it *then* - long after
+the lock had been released.
+
+**What makes this worth recording is the test next to it.** F05-T38 had the
+same bug and **passed**: it asserted that a waiting request succeeds once the
+first transaction rolls back, and the request did succeed - because it only
+started after the rollback. The assertion was true for the wrong reason, and
+nothing about the result looked suspicious.
+
+**How I noticed:** only because the neighbouring test had a direct probe of
+the database. Without `pg_blocking_pids()` asserting that something really was
+blocked, both tests would have gone green and the suite would have claimed to
+exercise lock contention it never reached.
+
+**Fix:** `.then((r) => r)` to dispatch eagerly, and F05-T38 now waits for a
+blocked backend to appear *before* releasing. The suite also got faster -
+30 seconds to 5 - because the requests stopped timing out.
+
+### 30. My own coordination deadlocked the negative control
+
+The lost-update experiment needs two transactions to read before either
+writes, then the first to commit before the second writes. I wrote two
+rendezvous gates for that. The second one had a default size of 2, and only
+one participant ever arrived at it.
+
+The test hung for its full 60-second timeout.
+
+**The irony is the point:** this is a test whose entire subject is one
+participant waiting for another, and I deadlocked it on a default argument.
+The F04 lesson - barriers must be sized for who can actually reach them - is
+the same lesson, in the test harness rather than the database.
+
+**Fix:** `gate(1)` for the single-signal case, stated in the code with the
+reason.
+
+### 31. A design justification that a test proved false
+
+The cursor for review listing is a pair, `(createdAt, id)`. I justified that
+in the design, in the DTO's header comment and in the feature document, by
+saying two reviews created in the same transaction share a `createdAt` -
+because the column is declared `DEFAULT CURRENT_TIMESTAMP`, which is the
+transaction's start time.
+
+I wrote a test asserting exactly that. Three rows created in one Prisma
+transaction came back with **three different timestamps**.
+
+Prisma supplies `@default(now())` values from the client, per row, so the
+database default never fires. The claim was wrong.
+
+**The conclusion survived; the reasoning did not.** The real exposure is that
+`createdAt` is `Timestamptz(3)` - one millisecond of resolution - so any bulk
+insert, import or backfill can produce ties, and the UUIDv7 id is only
+*approximately* time-ordered. A composite cursor is still right.
+
+**Fix:** the test now constructs the tie explicitly and proves paging survives
+it; the comments in `list-reviews.dto.ts` and the feature document state the
+real reason and record that the first one was wrong.
+
+**Why I am recording a case where the code did not change:** a right answer
+held up by a wrong argument is fragile. The next person to read that comment
+would have believed something false about their database.
+
 ## What I decided, not the AI
 
 - Holding NestJS at 11 rather than upgrading Node machine-wide or swapping the
@@ -619,6 +689,15 @@ and only the planner's output is a statement about what *happens*.
 - Keeping R-11 ACCEPTED rather than claiming the advisory lock addressed it.
   The lock orders concurrent writers; out-of-order evaluation is a different
   problem and conflating them would make the risk register useless.
+- Denying the platform admin access to manager review operations rather than
+  assuming the role inherits it. Reviewing a company's spending is that
+  company's business, and no approved contract granted it.
+- Keeping ADR-004's narrow retry exemption instead of a strict single-winner
+  rule, and stating plainly that it produces two 200s with one transition -
+  rather than quietly redefining what the requirement measures.
+- Recording a wrong design justification in this log even though the code was
+  already correct, because a right answer held up by a wrong argument is
+  fragile for whoever reads it next.
 - Refusing to put the seeded credentials on the login page, and refusing to
   put invented figures on the dashboard, even though both make the screenshots
   look better.
@@ -640,3 +719,5 @@ and only the planner's output is a statement about what *happens*.
 | 2026-11-20 | F03 implementation | Canonicalisation, two-phase validation, the full submission transaction, aborted-transaction recovery, database-error classification, a sanitised conflict body. Five defects found and fixed. 130 new tests, 242/242 passing, no production endpoint published |
 | 2026-11-20 | F04 design review | Ten-point proposal agreed before any code. The F03 port turned out to need no change at all, which was the clearest evidence the boundary had been drawn in the right place. The project owner added six requirements; two of them - the post-count synchronisation and EXPLAIN ANALYZE over an index claim - corrected real weaknesses in the plan rather than refining it |
 | 2026-11-20 | F04 implementation | Three pure rules, a thin evaluator, the advisory lock as an injectable seam, and the production endpoint activated. Five defects found and fixed. 63 new tests, 305/305 passing, every F03 DEFERRED row closed |
+| 2026-11-20 | F05 design review | Twelve-point proposal agreed before any code. The existing schema turned out to need no migration - the composite foreign key from F01 already guarantees a review's tenant matches its expense's. The project owner added six requirements; three changed the implementation rather than refining it: a composite keyset cursor, `clock_timestamp()` over `now()`, and measuring Prisma's query shape instead of claiming it |
+| 2026-11-20 | F05 implementation | Review listing, details and resolution; a single conditional UPDATE with the tenant and concurrency guards in one WHERE; review and expense in one transaction. Three defects found and fixed. 66 new tests, 371/371 passing, R-04 mitigated with measured evidence |

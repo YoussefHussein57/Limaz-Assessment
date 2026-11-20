@@ -48,7 +48,7 @@ identifier belonging to another company.
 | **F02.1** | Design tokens, component primitives, app shell, login and logout | **Done** - 18/18 scripted checks, 5 browser-verified |
 | **F03** | Expense submission, canonicalisation, idempotency, concurrency | **Done** - 130 new tests |
 | **F04** | Policy rules, decision precedence, frequency concurrency | **Done** - 63 new tests. **POST /v1/expenses is live** |
-| F05 | Review lifecycle and concurrent resolution | Not started |
+| **F05** | Review lifecycle, manager resolution, concurrent safety | **Done** - 66 new tests. **The review API is live** |
 | F06 | Manager dashboard | Not started |
 | F07 | Review and policy UI | Not started |
 | F08 | Platform admin panel | Not started |
@@ -177,8 +177,8 @@ npm test --workspace @limaz/api
 ```
 
 ```
-Test Suites: 21 passed, 21 total
-Tests:       305 passed, 305 total
+Test Suites: 26 passed, 26 total
+Tests:       371 passed, 371 total
 ```
 
 Integration tests run against a throwaway database named `limaz_test`, dropped
