@@ -177,6 +177,71 @@ describe('F02 credentials at rest', () => {
       }
     });
 
+    it('redacts a password when the URL has NO username', () => {
+      // redis://:secret@host is legal. A pattern requiring at least one
+      // character before the colon let this through untouched.
+      const output = redactText('connecting to redis://:sup3rs3cret@cache:6379');
+
+      expect(output).not.toContain('sup3rs3cret');
+      expect(output).toContain('cache:6379');
+    });
+
+    it('redacts the WHOLE password when it contains an @', () => {
+      // Stopping at the first '@' redacted only the first half and left the
+      // rest in the log.
+      const output = redactText('url postgresql://user:pa@ss@db:5432/limaz failed');
+
+      expect(output).not.toContain('pa@ss');
+      expect(output).not.toContain('ss@db');
+      expect(output).toContain('db:5432');
+    });
+
+    it('redacts a short secret that an earlier length floor would have missed', () => {
+      // An eight-character minimum meant `password=abc` went straight through.
+      for (const sample of ['password=abc', 'token: x1', 'api_key=7']) {
+        expect(redactText(sample)).toContain(REDACTED);
+      }
+
+      expect(redactText('password=abc')).not.toContain('abc');
+    });
+
+    it('covers the credential key names that matter, not only the obvious ones', () => {
+      const samples = [
+        'client_secret=4f3a9b2c',
+        'access_token: ya29.ExampleValue',
+        'refresh_token=1//abcdef',
+        'x-api-key: ZZZTopSecret',
+        'secret=hunter2',
+      ];
+
+      for (const sample of samples) {
+        const output = redactText(sample);
+        expect(output).toContain(REDACTED);
+        expect(output).not.toMatch(/4f3a9b2c|ya29|abcdef|ZZZTopSecret|hunter2/);
+      }
+    });
+
+    it('leaves a URL with a username but no password alone', () => {
+      // There is nothing secret in it, and blanking it would remove useful
+      // diagnostic detail for no gain.
+      const url = 'postgresql://limaz@db:5432/limaz';
+      expect(redactText(`connecting to ${url}`)).toContain(url);
+    });
+
+    it('truncates very long input instead of scanning it unbounded', () => {
+      // Caller-influenced data reaches error messages, so the length is not
+      // ours to assume. An unbounded scan turns logging into a stall.
+      const huge = `${'a'.repeat(50_000)} postgresql://u:leaked@host/db`;
+
+      const started = Date.now();
+      const output = redactText(huge);
+      const elapsedMs = Date.now() - started;
+
+      expect(output).toContain('[truncated]');
+      expect(output.length).toBeLessThan(10_000);
+      expect(elapsedMs).toBeLessThan(500);
+    });
+
     it('redacts credential-bearing prefixes in free text', () => {
       const samples = [
         'Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.payload.signature',
