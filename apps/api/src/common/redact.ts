@@ -1,22 +1,37 @@
 /**
- * Removes credentials from anything that is about to be written somewhere
- * durable: a log line, an error report, a response body.
+ * Removes credentials from anything about to be written somewhere durable: a
+ * log line, an error report, a response body.
  *
  * The threat is not malice, it is habit. Logging a whole request object, or an
- * error that happens to carry headers, is the normal way an API key ends up in
- * a log aggregator - where it is searchable, retained, and visible to people
- * who were never meant to hold it.
+ * error that happens to carry headers, is the normal way an API key reaches a
+ * log aggregator - where it is searchable, retained, and visible to people who
+ * were never meant to hold it.
  *
- * WHAT THIS IS AND IS NOT
+ * WHAT THIS IS, AND WHAT IT IS NOT
  *
- * Structural defences do the real work: credentials are never put in a
- * response, request headers are never echoed, and `redact()` blanks by KEY
- * NAME, which is exact. Scanning free text for things that look like secrets
- * is a backstop for the cases those miss - a driver error that quotes a
- * connection string, a message somebody interpolated a token into.
+ * The real protection is structural: credentials never go into a response,
+ * request headers are never echoed, and `redact()` blanks by KEY NAME, which
+ * is exact. Scanning free text is a BACKSTOP for what those miss - a driver
+ * error quoting a connection string, a message somebody interpolated a token
+ * into.
  *
- * A backstop is not a guarantee. Treat anything here as reducing the blast
- * radius of a mistake, never as a licence to log a secret on purpose.
+ * A backstop is not a guarantee, and this one has been revised three times as
+ * review found cases it missed. That is the nature of pattern-matching
+ * arbitrary text: each pass closes real gaps and cannot prove there are none
+ * left. Its known limits are listed below rather than left to be discovered.
+ *
+ * KNOWN LIMITS, accepted deliberately
+ *
+ *  - A raw '/' inside a URL password is not redacted. RFC 3986 requires it to
+ *    be percent-encoded, so such a string is malformed. Catching it means
+ *    scanning past the path separator, which then mangles ordinary URLs like
+ *    `https://cdn.example.com:8080/img@2x.png` - and a redactor that fills
+ *    logs with noise is a redactor somebody switches off.
+ *  - A secret with no key name, no recognisable prefix and no known format is
+ *    indistinguishable from an identifier. Nothing here will catch it.
+ *  - Input is truncated, so a credential past the limit is never scanned. The
+ *    cut is taken at a whitespace boundary so it cannot split a token and emit
+ *    half a secret.
  */
 
 /** Headers whose values are credentials and must never be recorded. */
@@ -47,28 +62,36 @@ const SENSITIVE_KEYS = new Set([
 export const REDACTED = '[redacted]';
 
 /**
- * Free text is truncated before scanning.
+ * Free text is bounded before scanning.
  *
- * Two reasons. A log line past a few kilobytes is not read by anyone, and the
- * scanning below is linear per pass but runs several passes - handing it an
- * unbounded string turns a logging concern into a stall. Caller-influenced
+ * A log line past a few kilobytes is not read by anyone, and caller-influenced
  * data does reach error messages, so the length is not ours to assume.
  */
 const MAX_SCANNED_LENGTH = 8_192;
 
 /**
- * Credential-bearing prefixes that are followed by a delimiter.
+ * Credential-bearing key names followed by a delimiter.
  *
- * The value is everything up to whitespace or a delimiter, with NO minimum
- * length - an earlier version required eight characters, so `password=abc`
- * went straight through. Over-redaction is the safe direction here: blanking
- * a harmless word costs nothing, missing a short secret costs everything.
+ * The separator allows an optional closing quote before it, so the JSON shape
+ * `"password": "hunter2"` matches - which an earlier version did not, and
+ * structured logs are JSON.
+ *
+ * There is NO minimum value length: an eight-character floor let `password=abc`
+ * through. Over-redaction is the safe direction, since blanking a harmless
+ * word costs nothing and missing a short secret costs everything.
+ *
+ * A delimiter is required rather than accepting bare whitespace. `password is
+ * incorrect` would otherwise have `is` blanked on every authentication
+ * failure, and noise is how redaction ends up being removed.
  */
 const KEYED_SECRET =
-  /\b(secret|client_secret|clientsecret|access_token|accesstoken|refresh_token|refreshtoken|token|api[_-]?key|apikey|x-api-key|password|passwd|pwd)\s*[=:]\s*["']?([^\s"'&,;)\]}]+)/gi;
+  /\b(secret|client_secret|clientsecret|access_token|accesstoken|refresh_token|refreshtoken|token|api[_-]?key|apikey|x-api-key|password|passwd|pwd)\b["']?\s*[=:]\s*["']?([^\s"'&,;)\]}]+)/gi;
 
-/** Scheme-style credentials: `Authorization: Bearer <value>`. */
-const SCHEME_SECRET = /\b(bearer|basic)\s+([^\s"',;)\]}]+)/gi;
+/**
+ * Scheme-style credentials, where whitespace IS the separator.
+ * `Authorization: Bearer <value>`, `token <value>`.
+ */
+const SCHEME_SECRET = /\b(bearer|basic|token)\s+([^\s"',;)\]}]+)/gi;
 
 /** Our own API key format, which carries no key name when pasted into prose. */
 const LIMAZ_KEY = /\blmz_[a-z0-9]+_[A-Za-z0-9_-]{16,}\b/g;
@@ -76,93 +99,93 @@ const LIMAZ_KEY = /\blmz_[a-z0-9]+_[A-Za-z0-9_-]{16,}\b/g;
 /** bcrypt modular crypt format. */
 const BCRYPT_HASH = /\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}/g;
 
+/** Characters that end a URL authority: path, query, fragment, or framing. */
+const AUTHORITY_TERMINATORS = new Set(['/', '?', '#', ' ', '\t', '\n', '\r', '"', "'", '<', '>']);
+
 /**
- * Blanks the password inside one URL-shaped token.
+ * Blanks the password in every URL in the string, in one linear pass.
  *
- * Written with string indexing rather than a regular expression, which is what
- * makes three separate problems go away at once:
+ * Written with string indexing rather than a regular expression, which removes
+ * three problems at once:
  *
- *   - An EMPTY username. `redis://:secret@host` is legal and a pattern that
- *     required at least one character before the colon let the password
- *     through untouched.
- *   - An `@` INSIDE the password. Stopping at the first `@` redacted only part
- *     of it and left the rest in the log; `lastIndexOf` within the authority
- *     stops at the right one.
- *   - Backtracking. There is none here, so no input length can make this
- *     quadratic.
+ *   - An EMPTY username. `redis://:secret@host` is legal, and requiring a
+ *     character before the colon let the password through untouched.
+ *   - An '@' INSIDE the password. Stopping at the first one redacted half of
+ *     it; the authority is scanned to its LAST '@'.
+ *   - Backtracking. There is none, so no input length makes this quadratic.
  *
- * The host is deliberately preserved. An error that no longer says which
- * target failed has been redacted into uselessness, and a redactor that
- * destroys the diagnosis is a redactor somebody removes.
+ * It walks EVERY '://' in the string, not the first per whitespace-separated
+ * token: a message listing two connection strings separated by a comma is one
+ * token, and the second used to go unredacted.
+ *
+ * The host is preserved deliberately. An error that no longer says which
+ * target failed has been redacted into uselessness.
  */
-function redactUrlToken(token: string): string {
-  const schemeEnd = token.indexOf('://');
-  if (schemeEnd <= 0) {
-    return token;
-  }
-
-  const authorityStart = schemeEnd + 3;
-
-  // The authority runs until the path, query or fragment begins.
-  let authorityEnd = token.length;
-  for (let i = authorityStart; i < token.length; i += 1) {
-    const char = token[i];
-    if (char === '/' || char === '?' || char === '#') {
-      authorityEnd = i;
-      break;
-    }
-  }
-
-  const authority = token.slice(authorityStart, authorityEnd);
-
-  // Userinfo ends at the LAST '@' in the authority, because a password may
-  // legally contain one.
-  const at = authority.lastIndexOf('@');
-  if (at === -1) {
-    return token;
-  }
-
-  const userinfo = authority.slice(0, at);
-  const colon = userinfo.indexOf(':');
-  if (colon === -1) {
-    // A username with no password. Nothing secret to remove.
-    return token;
-  }
-
-  const username = userinfo.slice(0, colon);
-  const hostAndAfter = authority.slice(at + 1);
-
-  return (
-    token.slice(0, authorityStart) +
-    username +
-    ':' +
-    REDACTED +
-    '@' +
-    hostAndAfter +
-    token.slice(authorityEnd)
-  );
-}
-
-/** Applies the URL rule to every whitespace-separated token. */
 function redactUrlCredentials(value: string): string {
   if (!value.includes('://')) {
     return value;
   }
 
-  return value
-    .split(/(\s+)/)
-    .map((part) => (part.includes('://') ? redactUrlToken(part) : part))
-    .join('');
+  let output = '';
+  let cursor = 0;
+
+  for (;;) {
+    const scheme = value.indexOf('://', cursor);
+    if (scheme === -1) {
+      output += value.slice(cursor);
+      return output;
+    }
+
+    const authorityStart = scheme + 3;
+
+    let authorityEnd = authorityStart;
+    while (authorityEnd < value.length && !AUTHORITY_TERMINATORS.has(value[authorityEnd]!)) {
+      authorityEnd += 1;
+    }
+
+    const authority = value.slice(authorityStart, authorityEnd);
+    const at = authority.lastIndexOf('@');
+    const colon = at === -1 ? -1 : authority.slice(0, at).indexOf(':');
+
+    if (at === -1 || colon === -1) {
+      // No userinfo, or a username with no password: nothing secret here.
+      output += value.slice(cursor, authorityEnd);
+    } else {
+      output +=
+        value.slice(cursor, authorityStart) +
+        authority.slice(0, colon + 1) +
+        REDACTED +
+        '@' +
+        authority.slice(at + 1);
+    }
+
+    cursor = authorityEnd;
+  }
+}
+
+/**
+ * Bounds the input WITHOUT splitting a token.
+ *
+ * Cutting at an arbitrary index can land inside a connection string, leaving a
+ * head like `postgresql://u:lea` that carries no '@' - so nothing redacts it
+ * and part of the password is logged. Trimming back to the last whitespace
+ * means only whole tokens are ever scanned or emitted.
+ */
+function bound(value: string): string {
+  if (value.length <= MAX_SCANNED_LENGTH) {
+    return value;
+  }
+
+  const slice = value.slice(0, MAX_SCANNED_LENGTH);
+  const lastBreak = slice.search(/\s\S*$/);
+  const safe = lastBreak > 0 ? slice.slice(0, lastBreak) : slice;
+
+  return `${safe} ...[truncated]`;
 }
 
 /** Replaces anything that looks like a credential inside a free-text string. */
 export function redactText(value: string): string {
-  const scanned =
-    value.length > MAX_SCANNED_LENGTH
-      ? `${value.slice(0, MAX_SCANNED_LENGTH)} ...[truncated]`
-      : value;
-
-  return redactUrlCredentials(scanned)
+  return redactUrlCredentials(bound(value))
     .replace(KEYED_SECRET, `$1=${REDACTED}`)
     .replace(SCHEME_SECRET, `$1 ${REDACTED}`)
     .replace(LIMAZ_KEY, REDACTED)

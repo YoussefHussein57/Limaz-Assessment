@@ -242,6 +242,64 @@ describe('F02 credentials at rest', () => {
       expect(elapsedMs).toBeLessThan(500);
     });
 
+    it('never emits half a secret at the truncation boundary', () => {
+      // Cutting at an arbitrary index can land inside a connection string,
+      // leaving a head that carries no '@' - so nothing redacts it and part of
+      // the password is logged anyway.
+      const secret = 'thePasswordValue';
+
+      // Walk the boundary across the whole URL, one character at a time.
+      for (let pad = 8_100; pad < 8_200; pad += 1) {
+        const input = `${'x'.repeat(pad)} postgresql://user:${secret}@db:5432/limaz`;
+        const output = redactText(input);
+
+        for (let length = 4; length <= secret.length; length += 1) {
+          expect(output).not.toContain(secret.slice(0, length));
+        }
+      }
+    });
+
+    it('redacts EVERY url in one token, not just the first', () => {
+      // A message listing two connection strings separated by a comma is a
+      // single whitespace token.
+      const output = redactText(
+        'tried postgresql://a:firstpw@h1/db,postgresql://b:secondpw@h2/db and failed',
+      );
+
+      expect(output).not.toContain('firstpw');
+      expect(output).not.toContain('secondpw');
+      expect(output).toContain('h1');
+      expect(output).toContain('h2');
+    });
+
+    it('redacts a quoted key in JSON, which is how structured logs look', () => {
+      // An earlier version required the delimiter immediately after the key
+      // name, so the closing quote broke the match - and structured logs are
+      // JSON.
+      const output = redactText(
+        '{"user":"nour","password":"hunter2","access_token":"ya29.Example"}',
+      );
+
+      expect(output).not.toContain('hunter2');
+      expect(output).not.toContain('ya29.Example');
+      // The non-secret field survives: a redactor that blanks everything is a
+      // redactor people switch off.
+      expect(output).toContain('nour');
+    });
+
+    it('leaves an ordinary URL with a port and an @ in its path alone', () => {
+      // The deliberate limit: scanning past the path separator to catch a raw
+      // '/' inside a password would mangle this common shape instead.
+      const url = 'https://cdn.example.com:8080/img@2x.png';
+      expect(redactText(`fetching ${url}`)).toContain(url);
+    });
+
+    it('does not blank ordinary prose that happens to follow a key name', () => {
+      // A delimiter is required rather than bare whitespace, so an
+      // authentication failure message stays readable.
+      expect(redactText('the password is incorrect')).toContain('is incorrect');
+    });
+
     it('redacts credential-bearing prefixes in free text', () => {
       const samples = [
         'Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.payload.signature',
