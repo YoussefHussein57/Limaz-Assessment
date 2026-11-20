@@ -13,16 +13,18 @@ identifier belonging to another company.
 
 ## Current state
 
-> **F00 (foundation) is complete.** The stack builds, starts and connects to
-> PostgreSQL. **No business logic exists yet.**
+> **F00 (foundation) and F01 (database and seed) are complete.** One
+> `docker compose up` starts the stack, applies migrations and seeds two
+> companies with different policies, their users, API keys and sample
+> expenses. **No API behaviour exists yet** beyond `/health`.
 >
 > This is an incremental build. Each feature is implemented, tested and
 > reviewed before the next one begins. The table below is the honest status.
 
 | Feature | Scope | Status |
 |---|---|---|
-| **F00** | Monorepo, Docker, health check, config validation, tooling | **Done** - 17/17 acceptance checks, 13/13 tests |
-| F01 | Database schema, migrations, seed data | Not started |
+| **F00** | Monorepo, Docker, health check, config validation, tooling | **Done** - 17/17 acceptance checks |
+| **F01** | Database schema, migrations, seed data | **Done** - 11/11 acceptance checks, 53/53 tests |
 | F02 | API key auth, manager and admin sessions, tenant isolation | Not started |
 | F03 | Expense submission and idempotency | Not started |
 | F04 | Policy rules, decision precedence, frequency concurrency | Not started |
@@ -33,7 +35,7 @@ identifier belonging to another company.
 | F09 | Cross-feature regression and security testing | Not started |
 | F10 | Final documentation and submission readiness | Not started |
 
-The architectural decisions for F01 to F05 are already made and recorded in
+The architectural decisions for F02 to F05 are already made and recorded in
 [`docs/adr/`](docs/adr/). They are decided, not implemented.
 
 ---
@@ -77,12 +79,50 @@ curl http://localhost:3001/health
 A `503` with `"status": "degraded"` means the API is running but PostgreSQL is
 not answering.
 
+### Development credentials
+
+The seed prints these at startup. They are published here on purpose so a
+reviewer can run the stack, and they are used nowhere else. Only hashes reach
+the database - bcrypt for passwords, SHA-256 for API keys.
+
+| Role | Email | Password |
+|---|---|---|
+| Manager, Nile Logistics | `manager@nile-logistics.test` | `NileManager!2026` |
+| Manager, Delta Consulting | `manager@delta-consulting.test` | `DeltaManager!2026` |
+| Platform admin | `admin@limaz.test` | `PlatformAdmin!2026` |
+
+| Company | API key, sent as `x-api-key` |
+|---|---|
+| Nile Logistics | `lmz_dev_nile_7Qk2PmXaR4tVbN8cLw3ZyH6dJeF5uG9s` |
+| Delta Consulting | `lmz_dev_delta_3Xn9TbVcA7pKmR2wQy8ZsL4dHe6uJ5g` |
+
+Login and API-key authentication are built in F02; until then these identify
+the seeded rows.
+
+### Seeded data
+
+| | Nile Logistics | Delta Consulting |
+|---|---|---|
+| Auto-approve limit | 500.00 SAR | 2000.00 SAR |
+| Frequency rule | more than 3 in 60 min | more than 5 in 30 min |
+| Blocked categories | `GAMBLING` | `ALCOHOL`, `GAMBLING` |
+
+Plus 12 expenses covering all three decisions, 7 rule hits, and 3 reviews (one
+open, one resolved as approved, one resolved as rejected). The data is built to
+demonstrate the rules rather than just fill the screen - including an expense
+where two rules fire and `REJECT` beats `REVIEW`, and the **same
+`externalId` in both companies**, which is what tenant-scoped uniqueness
+means.
+
 ### Migrations and seeding
 
-From F01 onwards, the API container applies migrations and seeds the database on
-startup, inside `apps/api/docker-entrypoint.sh`. **`docker compose up` stays the
-only command required.** In F00 both steps run and report that there is nothing
-to do yet, which is verified by test F00-T03b.
+The API container applies migrations and seeds the database on startup, inside
+`apps/api/docker-entrypoint.sh`. **`docker compose up` is the only command
+required.**
+
+The seed is idempotent: every write is an upsert keyed on a fixed id, so the
+container can seed on every start without the data doubling. Verified by
+F01-T15 and F01-T19.
 
 ### Stopping
 
@@ -102,13 +142,17 @@ npm test --workspace @limaz/api
 ```
 
 ```
-Test Suites: 3 passed, 3 total
-Tests:       13 passed, 13 total
+Test Suites: 6 passed, 6 total
+Tests:       53 passed, 53 total
 ```
 
-The test setup resolves `DATABASE_URL` from an explicit variable, then
-`apps/api/.env`, then the documented local default on port 5433, so a fresh
-clone needs no extra step.
+Integration tests run against a throwaway database named `limaz_test`, dropped
+and recreated on every run with the migrations applied through the real
+`prisma migrate deploy`. They never touch the development database.
+
+`DATABASE_URL` resolves from an explicit variable, then `apps/api/.env`, then
+the documented local default on port 5433, so a fresh clone needs no extra
+step.
 
 Full acceptance verification, including Docker:
 
@@ -116,8 +160,13 @@ Full acceptance verification, including Docker:
 bash scripts/verify-f00.sh
 ```
 
-This runs the 17 checks in [`docs/testing/F00-test-matrix.md`](docs/testing/F00-test-matrix.md)
-and prints a PASS/FAIL line for each.
+```bash
+bash scripts/verify-f01.sh
+```
+
+Each prints a PASS/FAIL line per test id, matching
+[`docs/testing/F00-test-matrix.md`](docs/testing/F00-test-matrix.md) and
+[`docs/testing/F01-test-matrix.md`](docs/testing/F01-test-matrix.md).
 
 Static gates:
 
@@ -145,7 +194,8 @@ apps/
   web/          Next.js App Router
     app/api/      Same-origin proxy to the API
 docs/
-  adr/          Ten architecture decision records
+  adr/          Eleven architecture decision records
+  architecture/ Overview and the data model, with the ERD
   risks.md      Risk register, with evidence per entry
   features/     One document per feature
   testing/      Test matrices with actual results

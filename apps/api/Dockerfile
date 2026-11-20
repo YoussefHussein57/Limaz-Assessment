@@ -34,6 +34,10 @@ COPY --from=build /app/package.json ./package.json
 COPY --from=build /app/apps/api/dist ./apps/api/dist
 COPY --from=build /app/apps/api/prisma ./apps/api/prisma
 COPY --from=build /app/apps/api/package.json ./apps/api/package.json
+# Required at RUNTIME, not just at build time: Prisma 7 reads the connection
+# string from this file, so `prisma migrate deploy` in the entrypoint cannot
+# run without it.
+COPY --from=build /app/apps/api/prisma.config.ts ./apps/api/prisma.config.ts
 COPY apps/api/docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh && chown -R node:node /app

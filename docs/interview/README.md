@@ -8,6 +8,7 @@ The questions are written to attack **our actual choices**, not textbook theory.
 | Feature | Questions | Reviewed |
 |---|---|---|
 | [F00 - Foundation](F00-foundation.md) | 5 | Not yet |
+| [F01 - Database and seed](F01-database-and-seed.md) | 5 | Not yet |
 
 ## Learning gaps
 
@@ -19,3 +20,5 @@ them.
 | 2026-11-19 | PostgreSQL index internals | A `UNIQUE` constraint is a **B-tree**, so lookup is `O(log n)`, not `O(1)`. PostgreSQL has no hash-backed unique index by default | Noted, corrected in ADR-006 |
 | 2026-11-19 | Snapshot isolation | `READ COMMITTED` takes a snapshot **per statement**; `REPEATABLE READ` takes one at the transaction's **first statement**. That difference is what makes lock-then-count correct under one and silently wrong under the other | Noted, explained in ADR-007 |
 | 2026-11-19 | Docker context semantics | A `.dockerignore` pattern without `**/` matches only at the context root | Noted, fixed and guarded by F00-T12 |
+| 2026-11-20 | Composite foreign keys | PostgreSQL needs a `UNIQUE` on exactly the referenced columns before they can be a foreign-key target - even when one of them is already the primary key | Noted, used in ADR-011 |
+| 2026-11-20 | Prisma error translation | Prisma collapses every non-unique, non-FK database error into `P2039`. The real SQLSTATE and constraint name survive under `meta.driverAdapterError.cause` | Noted, used by the test helper |

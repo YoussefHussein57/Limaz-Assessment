@@ -29,9 +29,9 @@ evidence that supports its status. Where a mitigation is partial, the status is
 | **Impact** | Catastrophic - this is the central guarantee of the product |
 | **Severity** | **Critical** |
 | **Mitigation** | `companyId` resolved only from the API key record or the session. Every query carries `WHERE company_id = <authenticated>`. DTOs use `whitelist` and `forbidNonWhitelisted`, so a body-supplied `companyId` is stripped. `404`, never `403` (ADR-003) |
-| **Automated verification** | F02-T* - authenticate as A, request each of B's record types by real id, assert `404` and a byte-identical body to the nonexistent case |
+| **Automated verification** | F02-T* - authenticate as A, request each of B's record types by real id, assert `404` and a byte-identical body to the nonexistent case. **F01 landed the schema half:** F01-T09 and F01-T09b prove a review cannot claim a tenant its expense does not belong to (ADR-011) |
 | **Manual verification** | Direct API calls bypassing the UI entirely |
-| **Status** | `OPEN` - lands in F02 |
+| **Status** | `IN PROGRESS` - the database can no longer hold cross-tenant review data; the API boundary lands in F02 |
 
 ### R-02 - Frequency rule bypassed under concurrency
 
@@ -60,9 +60,9 @@ evidence that supports its status. Where a mitigation is partial, the status is
 | **Impact** | High - breaks idempotency and double-counts toward frequency |
 | **Severity** | **Critical** |
 | **Mitigation** | `UNIQUE (company_id, external_id)`; the database rejects the second write. The application catches `23505` and returns the original decision. No check-then-insert (ADR-001) |
-| **Automated verification** | F03-T*, two simultaneous identical submissions, assert one row and two `200`s with the same decision |
+| **Automated verification** | F03-T*, two simultaneous identical submissions, assert one row and two `200`s with the same decision. **F01 landed the constraint:** F01-T04 proves a duplicate within a company is rejected, F01-T05 that two companies may share an `externalId` |
 | **Manual verification** | - |
-| **Status** | `OPEN` - lands in F03 |
+| **Status** | `IN PROGRESS` - the constraint exists and is tested; the conflict-handling behaviour lands in F03 |
 
 ### R-04 - A review is resolved twice
 
@@ -74,9 +74,9 @@ evidence that supports its status. Where a mitigation is partial, the status is
 | **Impact** | High |
 | **Severity** | High |
 | **Mitigation** | Single conditional `UPDATE ... WHERE id = $1 AND company_id = $2 AND state = 'OPEN'`; review and expense updated in one transaction; `rowCount = 0` yields `409` (ADR-004) |
-| **Automated verification** | F05-T*, two simultaneous resolves, assert exactly one `200`, one `409`, one audit record |
+| **Automated verification** | F05-T*, two simultaneous resolves, assert exactly one `200`, one `409`, one audit record. **F01 landed the supporting constraints:** `UNIQUE (expenseId)` (F01-T06), the composite tenant key (F01-T09), and `reviews_state_resolution_check`, which makes a resolved review with no recorded reviewer unstorable (F01-T12) |
 | **Manual verification** | Two browser sessions |
-| **Status** | `OPEN` - lands in F05 |
+| **Status** | `OPEN` - the constraints are in place; the conditional UPDATE lands in F05 |
 
 ### R-05 - Stack fails to start from a clean clone
 
@@ -90,7 +90,7 @@ evidence that supports its status. Where a mitigation is partial, the status is
 | **Mitigation** | `pg_isready` healthcheck on `db`; `depends_on: condition: service_healthy` on `api` and `web`; entrypoint that applies migrations and seeds before starting the process |
 | **Automated verification** | **F00-T01** (cold start to healthy), **F00-T03** (`RestartCount = 0`), **F00-T10** (two consecutive cold starts) - see the result table below |
 | **Manual verification** | Fresh-clone rehearsal before submission |
-| **Status** | `MITIGATED` for F00 scope. Re-verify after F01 adds real migrations and a seed script |
+| **Status** | `MITIGATED`. **Re-verified in F01** now that the entrypoint genuinely applies migrations and seeds: F01-T18 to T18d, and F01-T19 for a restart |
 
 ### R-06 - Schedule pressure causes a guarantee to be skipped
 
@@ -130,7 +130,7 @@ evidence that supports its status. Where a mitigation is partial, the status is
 | **Impact** | High - a leaked API key is full tenant compromise |
 | **Severity** | **Critical** |
 | **Mitigation** | Redaction interceptor for `x-api-key` and `authorization`; exception filter never echoes headers; pattern scrubber for key-shaped strings; secrets travel in headers only, never query strings; plaintext returned exactly once (ADR-006). **Already applied in F00:** the health endpoint returns a generic `"database unreachable"` and logs the driver error server-side only, because Prisma connection errors embed the password |
-| **Automated verification** | `health.unit.spec.ts` asserts the response contains neither the driver message nor the password. **F00-T02b** asserts no connection string in the live health response. `env.spec.ts` asserts the config error never echoes the variable value |
+| **Automated verification** | `health.unit.spec.ts` asserts the response contains neither the driver message nor the password. **F00-T02b** asserts no connection string in the live health response. `env.spec.ts` asserts the config error never echoes the variable value. **F01:** F01-T14b and F01-T14c assert passwords and API keys are stored only as hashes, and F01-T18i asserts no plaintext key reached the live database |
 | **Manual verification** | `grep` over captured container logs before submission |
 | **Status** | `IN PROGRESS` - the F00 surfaces are covered and tested; the interceptor lands with F02 |
 
@@ -250,13 +250,29 @@ evidence that supports its status. Where a mitigation is partial, the status is
 | **Status** | `MITIGATED` |
 | **Source** | Raised by automated security review of the F00 commit, 2026-11-19 |
 
+### R-17 - A category typo silently bypasses the blocked list
+
+| | |
+|---|---|
+| **Component** | Expense category matching |
+| **Description** | `category` is a free string, so a client sending `TRANSPORTATION` where the blocked list holds `TRANSPORT` simply does not match, and the rule does not fire |
+| **Likelihood** | Medium |
+| **Impact** | Medium - a blocked-category rejection is missed |
+| **Severity** | Medium |
+| **Mitigation (partial)** | Categories are normalised (trimmed, uppercased) in one place before storage and before comparison, so case and whitespace cannot cause a miss |
+| **Residual hole** | **A genuinely different word still does not match.** Closing it needs a per-company category vocabulary, which nothing in the requirements asks for and which would make every new category an administrative step |
+| **Why not an enum** | A Prisma enum would give database-level integrity, but the category vocabulary belongs to the company, not to us: every new category would need a migration and a deploy |
+| **Automated verification** | F04 will assert that normalisation makes case and whitespace variants match |
+| **Manual verification** | - |
+| **Status** | `ACCEPTED` - knowingly carried, with the reasoning recorded |
+
 ## Summary
 
 | Severity | Open | In progress | Mitigated | Accepted |
 |---|---|---|---|---|
-| Critical | R-01, R-02, R-03 | R-08, R-10 | R-05 | - |
+| Critical | R-02 | R-01, R-03, R-08, R-10 | R-05 | - |
 | High | R-04, R-06, R-15 | R-07 | R-12, R-14 | - |
-| Medium | R-13 | - | R-16 | R-11 |
+| Medium | R-13 | - | R-16 | R-11, R-17 |
 | Low | - | - | - | R-09 |
 
 ## Review log
@@ -267,3 +283,4 @@ evidence that supports its status. Where a mitigation is partial, the status is
 | 2026-11-19 | Architecture review by the project owner | R-07 to R-13 added |
 | 2026-11-19 | F00 completed | R-14 added (realised during implementation). R-05 and R-12 moved to `MITIGATED` with named evidence. R-07, R-08 and R-10 moved to `IN PROGRESS` |
 | 2026-11-19 | Automated security review of the F00 commit | R-16 added and mitigated: all published ports bound to `127.0.0.1` |
+| 2026-11-20 | F01 completed | R-17 added and accepted. R-01 and R-03 moved to `IN PROGRESS` with named F01 evidence. R-05 re-verified now that migrations and a seed actually run. R-04 and R-08 gained supporting evidence |

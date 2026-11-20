@@ -1,17 +1,17 @@
 // =============================================================================
-// F00 - FOUNDATION ONLY
+// LIMAZ Expense Policy Service - database schema
 //
-// This schema intentionally declares NO models. Its only purpose at this stage
-// is to give the API a real, typed database connection so that /health can
-// prove the service actually reached PostgreSQL rather than merely starting.
+// Design notes, alternatives and failure modes live in docs/adr/ and
+// docs/features/F01-database-and-seed.md. This file carries only the comments
+// that explain a line you would otherwise read as a mistake.
 //
-// The business schema (companies, users, api_keys, policies, expenses,
-// rule_hits, reviews) is introduced in F01, together with the first migration.
-// See docs/features/F00-foundation.md for the agreed F00 scope boundary.
+// In Prisma 7 the datasource carries no `url`: the CLI reads it from
+// prisma.config.ts and the runtime client receives a driver adapter.
+// See docs/adr/ADR-009-prisma-7-driver-adapter.md.
 //
-// Note: in Prisma 7 the datasource no longer carries a `url`. The CLI reads
-// the connection string from prisma.config.ts; the runtime client receives a
-// driver adapter. See docs/adr/ADR-009-prisma-7-driver-adapter.md.
+// CHECK constraints are NOT expressible in the Prisma schema language. Four of
+// them are appended by hand to the init migration and are listed in
+// docs/features/F01-database-and-seed.md. They are load-bearing, not cosmetic.
 // =============================================================================
 
 generator client {
@@ -20,4 +20,310 @@ generator client {
 
 datasource db {
   provider = "postgresql"
+}
+
+// -----------------------------------------------------------------------------
+// Enums
+// -----------------------------------------------------------------------------
+
+enum UserRole {
+  MANAGER
+  PLATFORM_ADMIN
+}
+
+enum ApiKeyStatus {
+  ACTIVE
+  ROTATING // superseded by a newer key, still valid until expiresAt
+  REVOKED
+}
+
+/// What the policy engine concluded at submission time. Never changes.
+enum ExpenseDecision {
+  APPROVE
+  REVIEW
+  REJECT
+}
+
+/// The expense's final outcome. Changes at most once, when a review resolves.
+enum ExpenseStatus {
+  APPROVED
+  REJECTED
+  PENDING_REVIEW
+}
+
+enum ReviewState {
+  OPEN
+  RESOLVED
+}
+
+enum ReviewOutcome {
+  APPROVED
+  REJECTED
+}
+
+enum RuleCode {
+  AMOUNT_LIMIT
+  FREQUENCY
+  BLOCKED_CATEGORY
+}
+
+// -----------------------------------------------------------------------------
+// Tenancy
+// -----------------------------------------------------------------------------
+
+model Company {
+  id       String @id @default(uuid(7)) @db.Uuid
+  name     String
+  /// ISO-4217. One currency per company (assumption A3): an expense in any
+  /// other currency is rejected rather than converted.
+  currency String @db.VarChar(3)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  policy   Policy?
+  users    User[]
+  apiKeys  ApiKey[]
+  expenses Expense[]
+
+  @@map("companies")
+}
+
+/// One row per company - the `@unique` on companyId is what makes this
+/// one-to-one rather than one-to-many.
+///
+/// Separate from Company because policy settings are edited from the manager
+/// dashboard while the company record is not, so the two have different write
+/// paths and different audit meaning.
+model Policy {
+  id        String @id @default(uuid(7)) @db.Uuid
+  companyId String @unique @db.Uuid
+
+  /// Minor units, consistent with Expense.amountMinor (ADR-005).
+  autoApproveLimitMinor  Int
+  frequencyMaxCount      Int      @default(3)
+  frequencyWindowMinutes Int      @default(60)
+  /// Normalised uppercase. A Postgres text[] rather than a join table: the
+  /// list is short, read whole, and never queried from the other direction.
+  blockedCategories      String[]
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("policies")
+}
+
+// -----------------------------------------------------------------------------
+// People and credentials
+// -----------------------------------------------------------------------------
+
+/// companyId is nullable because the platform admin belongs to no company.
+///
+/// That nullability is dangerous on its own: a MANAGER with a null companyId
+/// would make every tenant filter read `WHERE company_id = NULL`, which in SQL
+/// matches nothing - or, in carelessly written code, is dropped entirely. A
+/// CHECK constraint in the init migration makes that row impossible.
+model User {
+  id        String  @id @default(uuid(7)) @db.Uuid
+  companyId String? @db.Uuid
+
+  /// Globally unique, not per company. Login is email plus password with no
+  /// company selector, so the email must identify exactly one user.
+  email        String   @unique
+  passwordHash String
+  displayName  String
+  role         UserRole
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  company         Company?  @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  sessions        Session[]
+  resolvedReviews Review[]
+
+  @@index([companyId])
+  @@map("users")
+}
+
+/// Database-backed sessions rather than stateless JWTs, because a JWT cannot be
+/// revoked and logout, password change and admin access management all need
+/// revocation (ADR-008).
+///
+/// Only the SHA-256 hash of the token is stored. A database dump yields hashes,
+/// not usable sessions.
+model Session {
+  id        String    @id @default(uuid(7)) @db.Uuid
+  userId    String    @db.Uuid
+  tokenHash String    @unique
+  expiresAt DateTime  @db.Timestamptz(3)
+  revokedAt DateTime? @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  /// Supports "revoke every session for this user".
+  @@index([userId])
+  @@map("sessions")
+}
+
+/// Only the SHA-256 hash is stored; the plaintext is shown exactly once, at
+/// creation or rotation (ADR-006).
+model ApiKey {
+  id        String @id @default(uuid(7)) @db.Uuid
+  companyId String @db.Uuid
+
+  keyHash String @unique
+  /// First few characters of the key, for display and support only. It takes
+  /// no part in authentication.
+  prefix  String
+
+  status    ApiKeyStatus @default(ACTIVE)
+  /// Null means no expiry. During rotation the superseded key gets a value.
+  expiresAt DateTime?    @db.Timestamptz(3)
+  revokedAt DateTime?    @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@index([companyId])
+  @@map("api_keys")
+}
+
+// -----------------------------------------------------------------------------
+// Expenses
+// -----------------------------------------------------------------------------
+
+model Expense {
+  id        String @id @default(uuid(7)) @db.Uuid
+  companyId String @db.Uuid
+
+  /// Supplied by the company's backend. Unique per company, not globally.
+  externalId String
+  employeeId String
+
+  /// Minor units as an integer (ADR-005). Never a float: binary floating point
+  /// cannot represent most decimal fractions, and the error shows up as money.
+  amountMinor Int
+  currency    String @db.VarChar(3)
+  merchant    String
+  /// Normalised uppercase before storage, so blocked-list matching is exact.
+  category    String
+
+  /// When the money was spent. The frequency window is measured on this, not
+  /// on arrival time (ADR-002).
+  spentAt    DateTime @db.Timestamptz(3)
+  /// When we received it. Stored so the gap to spentAt is always auditable.
+  receivedAt DateTime @default(now()) @db.Timestamptz(3)
+
+  decision ExpenseDecision
+  status   ExpenseStatus
+
+  /// SHA-256 over the canonicalised business fields. Distinguishes a genuine
+  /// retry from a conflicting resubmission of the same externalId (ADR-001).
+  payloadHash String
+
+  /// The policy settings this expense was judged against, captured at decision
+  /// time (assumption A7). Editing a policy never re-evaluates history, so
+  /// without this snapshot "why was this approved?" becomes unanswerable.
+  policySnapshot Json
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  company  Company   @relation(fields: [companyId], references: [id], onDelete: Restrict)
+  ruleHits RuleHit[]
+  review   Review?
+
+  /// Tenant-scoped idempotency. The database is the authority: a check-then-
+  /// insert in application code loses the race when two retries arrive
+  /// together (ADR-001, risk R-03).
+  @@unique([companyId, externalId])
+
+  /// Looks redundant because `id` is already unique - it is not. Postgres
+  /// requires a UNIQUE on exactly the referenced columns for them to be the
+  /// target of a foreign key. This is what lets Review reference
+  /// (id, companyId) together, so a review's tenant can never drift from its
+  /// expense's tenant.
+  @@unique([id, companyId])
+
+  /// The frequency query: company + employee + a spentAt range. Column order
+  /// matters - the range column must come last for this to be a range scan
+  /// (ADR-007).
+  @@index([companyId, employeeId, spentAt])
+
+  /// The manager dashboard: a company's expenses, most recent first. The index
+  /// above cannot serve this, because employeeId sits between the two columns
+  /// this query uses.
+  @@index([companyId, spentAt])
+  @@map("expenses")
+}
+
+/// One row per rule that fired. The API response lists every reason, not only
+/// the one that produced the winning decision.
+model RuleHit {
+  id        String @id @default(uuid(7)) @db.Uuid
+  expenseId String @db.Uuid
+
+  ruleCode RuleCode
+  /// What this individual rule concluded, before precedence was applied.
+  decision ExpenseDecision
+  /// Rule-specific evidence, for example the limit and the amount, or the
+  /// window, the count and the maximum.
+  detail   Json
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+
+  expense Expense @relation(fields: [expenseId], references: [id], onDelete: Cascade)
+
+  /// A rule fires at most once per expense.
+  @@unique([expenseId, ruleCode])
+  @@map("rule_hits")
+}
+
+/// Opened only for a REVIEW decision (assumption A8), at most one per expense.
+///
+/// companyId is denormalised from the expense so the tenant guard and the
+/// concurrency guard can sit in the same WHERE clause of a single conditional
+/// UPDATE (assumption A9, ADR-004). Checking the tenant in a separate
+/// statement would open a time-of-check-to-time-of-use gap.
+///
+/// The composite relation below is what makes that denormalisation safe:
+/// (expenseId, companyId) is a foreign key onto Expense(id, companyId), so a
+/// review whose companyId differs from its expense's is rejected by the
+/// database. There is deliberately no second foreign key to Company - the
+/// reference is already transitively guaranteed through the expense.
+model Review {
+  id        String @id @default(uuid(7)) @db.Uuid
+  expenseId String @unique @db.Uuid
+  companyId String @db.Uuid
+
+  state   ReviewState    @default(OPEN)
+  /// All three resolution fields are null while OPEN and all three are set
+  /// when RESOLVED. A CHECK constraint enforces that, so a resolved review
+  /// with no recorded reviewer cannot exist.
+  outcome ReviewOutcome?
+
+  resolvedByUserId String?   @db.Uuid
+  resolvedAt       DateTime? @db.Timestamptz(3)
+
+  createdAt DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime @updatedAt @db.Timestamptz(3)
+
+  expense    Expense @relation(fields: [expenseId, companyId], references: [id, companyId], onDelete: Restrict)
+  resolvedBy User?   @relation(fields: [resolvedByUserId], references: [id], onDelete: Restrict)
+
+  /// Required by Prisma so the composite relation above can be one-to-one.
+  /// It is implied by the `@unique` on expenseId - which is kept, because
+  /// "one review per expense" should be stated directly rather than inferred
+  /// from a two-column constraint plus the composite foreign key.
+  @@unique([expenseId, companyId])
+
+  /// The manager's primary query: this company's open reviews.
+  @@index([companyId, state])
+  @@map("reviews")
 }

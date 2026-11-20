@@ -30,5 +30,9 @@ export default defineConfig({
   ...(databaseUrl ? { datasource: { url: databaseUrl } } : {}),
   migrations: {
     path: 'prisma/migrations',
+    // Used by `prisma migrate reset` and `prisma db seed`. The container
+    // entrypoint calls the compiled script directly rather than going through
+    // the CLI, so this exists for a developer resetting their local database.
+    seed: 'node dist/prisma/seed.js',
   },
 });

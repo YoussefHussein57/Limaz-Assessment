@@ -119,7 +119,9 @@ the design would silently produce wrong counts - see
 
 ## Data model
 
-Planned for F01. Constraints that carry a guarantee are called out.
+**Implemented in F01.** Full detail, including the ERD, the deletion matrix
+and the "what breaks if this changes" table, is in
+[`data-model.md`](data-model.md). Constraints that carry a guarantee are called out.
 
 | Entity | Notes |
 |---|---|
@@ -156,7 +158,8 @@ printing their values. Nothing else in the codebase reads `process.env`.
 
 ## Where to read next
 
-- [`docs/adr/`](../adr/) - the ten decisions, with alternatives and test strategy
+- [`data-model.md`](data-model.md) - the schema, with every constraint explained
+- [`docs/adr/`](../adr/) - the eleven decisions, with alternatives and test strategy
 - [`docs/risks.md`](../risks.md) - risk register, with evidence per entry
 - [`docs/features/`](../features/) - one document per feature
 - [`docs/testing/`](../testing/) - test matrices with actual results

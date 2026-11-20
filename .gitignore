@@ -54,3 +54,11 @@ docker-compose.override.yml
 # ---- prisma local artifacts ----
 apps/api/prisma/*.db
 apps/api/prisma/*.db-journal
+
+# ---- agent tooling installed into the workspace ----
+# Not part of this project. These appear when a Claude Code skill or agent is
+# installed locally; committing them would put third-party files in the
+# submission that nobody could justify (risk R-13).
+.claude/
+.agents/
+skills-lock.json

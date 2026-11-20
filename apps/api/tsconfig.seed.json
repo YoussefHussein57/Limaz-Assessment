@@ -1,0 +1,27 @@
+{
+  // The seed is a standalone script, not part of the Nest application, so it
+  // is compiled separately.
+  //
+  // `nest build` uses tsconfig.build.json with rootDir ./src, which cannot
+  // emit anything from prisma/. Widening that rootDir would move the whole
+  // application from dist/main.js to dist/src/main.js and break the Dockerfile
+  // CMD and the F00 tests. A second, tiny config is the smaller change.
+  //
+  // rootDir "." plus include "prisma/**" puts the output at
+  // dist/prisma/seed.js - exactly the path the container entrypoint written in
+  // F00 already looks for, so the entrypoint contract does not change.
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "module": "nodenext",
+    "moduleResolution": "nodenext",
+    "isolatedModules": true,
+    "rootDir": ".",
+    "outDir": "./dist",
+    "types": ["node"],
+    "declaration": false,
+    // Never incremental: a stale tsbuildinfo makes tsc exit 0 while emitting
+    // nothing. That cost us an empty Docker image in F00 (defect D-2).
+    "incremental": false
+  },
+  "include": ["prisma/seed.ts", "prisma/seed/**/*.ts"]
+}

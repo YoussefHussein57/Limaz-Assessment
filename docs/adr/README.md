@@ -15,9 +15,11 @@ what we rejected, and what would have to change for the decision to be wrong.
 | [ADR-008](ADR-008-browser-session.md) | Browser session storage | Q8 | Accepted |
 | [ADR-009](ADR-009-prisma-7-driver-adapter.md) | Prisma 7 driver adapter | - | Accepted, implemented in F00 |
 | [ADR-010](ADR-010-nestjs-11-toolchain.md) | NestJS 11 and TypeScript 5.9 toolchain | - | Accepted, implemented in F00 |
+| [ADR-011](ADR-011-composite-foreign-key-tenant-integrity.md) | Composite foreign key for tenant integrity | - | Accepted, implemented in F01 |
 
 ADR-001 to ADR-008 answer the eight questions in section 8 of the assessment.
 They are **decided** but **not yet implemented**: they land in F01 to F05.
 
-ADR-009 and ADR-010 record toolchain decisions that were forced by evidence
-gathered while building F00, and are already in effect.
+ADR-009 and ADR-010 record toolchain decisions forced by evidence gathered
+while building F00. ADR-011 records the schema decision that makes the
+denormalised tenant on `reviews` safe, and is what ADR-004 depends on.

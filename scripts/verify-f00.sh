@@ -218,8 +218,13 @@ if [ "$STACK_UP" -eq 1 ]; then
     fail "F00-T03" "api RestartCount=${RESTARTS:-unknown}"
   fi
 
-  if docker compose logs api 2>/dev/null | grep -q "no migrations present"; then
-    pass "F00-T03b" "entrypoint migration and seed steps ran (no-op in F00)"
+  # The point of this check is that the entrypoint's migration step RUNS, not
+  # which branch it takes. In F00 there were no migrations and it reported
+  # skipping; from F01 there are, and it reports applying them. Asserting the
+  # F00-only wording would make this check fail the moment the thing it was
+  # protecting started working.
+  if docker compose logs api 2>/dev/null | grep -qE "no migrations present|migrations applied"; then
+    pass "F00-T03b" "entrypoint migration step ran"
   else
     fail "F00-T03b" "entrypoint did not report its migration step"
   fi
