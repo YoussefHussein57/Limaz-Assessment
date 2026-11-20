@@ -48,6 +48,17 @@ services:
       NODE_ENV: production
       API_PORT: 3001
       DB_POOL_MAX: ${DB_POOL_MAX:-10}
+      # The browser origin the API expects. Any request that CARRIES an Origin
+      # header must match it; requests with no Origin (server-to-server API key
+      # callers) are unaffected.
+      APP_ORIGIN: ${APP_ORIGIN:-http://localhost:3000}
+      SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-8}
+      COOKIE_SECURE: ${COOKIE_SECURE:-true}
+      BCRYPT_COST: ${BCRYPT_COST:-10}
+      # EXPLICIT opt-in. This compose file IS the development and review stack,
+      # so it asks for the seed by name. A real deployment never sets this, and
+      # both the entrypoint and the seed script refuse without it.
+      SEED_DEV_DATA: "true"
       DATABASE_URL: postgresql://${POSTGRES_USER:-limaz}:${POSTGRES_PASSWORD:-limaz_dev_only_password}@db:5432/${POSTGRES_DB:-limaz}?schema=public
     ports:
       # Exposed directly as well as through the web proxy: company backends

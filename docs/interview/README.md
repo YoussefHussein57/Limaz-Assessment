@@ -9,6 +9,7 @@ The questions are written to attack **our actual choices**, not textbook theory.
 |---|---|---|
 | [F00 - Foundation](F00-foundation.md) | 5 | Not yet |
 | [F01 - Database and seed](F01-database-and-seed.md) | 5 | Not yet |
+| [F02 - Authentication](F02-authentication.md) | 5 | Not yet |
 
 ## Learning gaps
 

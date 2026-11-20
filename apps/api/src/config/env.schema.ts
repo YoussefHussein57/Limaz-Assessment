@@ -25,6 +25,62 @@ export const envSchema = z.object({
     }),
 
   /**
+   * The browser origin this API expects.
+   *
+   * A request that CARRIES an Origin header must match it. Requests with no
+   * Origin - every server-to-server API key caller - are unaffected, because
+   * such clients never send one. Requiring it unconditionally would break
+   * them, which is why the check is "if present, must match" rather than
+   * "must be present".
+   *
+   * The Origin header is a forbidden header name: page JavaScript cannot
+   * forge it, the browser sets it. So when it is present it is trustworthy.
+   */
+  APP_ORIGIN: z
+    .string({ error: 'APP_ORIGIN is required' })
+    .min(1, 'APP_ORIGIN is required')
+    .refine((value) => value.startsWith('http://') || value.startsWith('https://'), {
+      message: 'APP_ORIGIN must be an absolute origin, for example http://localhost:3000',
+    })
+    .refine((value) => !value.endsWith('/'), {
+      message: 'APP_ORIGIN must not end with a slash - browsers never send one',
+    })
+    .default('http://localhost:3000'),
+
+  /** Absolute session lifetime. Enforced in SQL, not only in the cookie. */
+  SESSION_TTL_HOURS: z.coerce
+    .number({ error: 'SESSION_TTL_HOURS must be a number' })
+    .int('SESSION_TTL_HOURS must be an integer')
+    .min(1, 'SESSION_TTL_HOURS must be at least 1')
+    .max(720, 'SESSION_TTL_HOURS must be 720 or fewer')
+    .default(8),
+
+  /**
+   * Secure cookies in every environment. Chrome and Firefox both treat
+   * http://localhost as a secure context, so this does not need to differ
+   * between development and production - and making it differ is how
+   * production-only security bugs happen.
+   */
+  COOKIE_SECURE: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((value) => value === 'true'),
+
+  /**
+   * bcrypt work factor for passwords only.
+   *
+   * Session tokens and API keys are hashed with SHA-256 instead: they carry
+   * 256 bits of CSPRNG entropy, so a slow hash buys no security, and bcrypt's
+   * per-row salt would make an indexed lookup impossible.
+   */
+  BCRYPT_COST: z.coerce
+    .number({ error: 'BCRYPT_COST must be a number' })
+    .int('BCRYPT_COST must be an integer')
+    .min(10, 'BCRYPT_COST must be at least 10')
+    .max(15, 'BCRYPT_COST above 15 makes login unusably slow')
+    .default(10),
+
+  /**
    * Maximum connections in the pg pool.
    *
    * This must stay comfortably above the concurrency used by any concurrency

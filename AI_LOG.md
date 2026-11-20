@@ -37,6 +37,8 @@ Summarised rather than pasted verbatim.
 | F00 implementation | Implement only F00. Run the tests. Show actual results. Do not commit |
 | F01 design review | Verify F00 rather than assume it. Then: which tables and why, which relationships, which constraints protect which invariant, and **consider whether composite foreign keys are necessary**. Design only - no code until approved |
 | F01 implementation | Implement the approved schema, migration, seed and tests. Real PostgreSQL. Show executed results |
+| F02 design review | Verify F00 and F01 first. Then compare API keys against sessions, password hashing against token hashing, database sessions against JWT, guards against middleware, explicit tenant scoping against row-level security, role against resource authorization, and HttpOnly against localStorage. Diagrams. No code until approved |
+| F02 implementation | Implement the approved design. Fix the seed security finding first. Real PostgreSQL. Do not commit |
 
 I also set two standing rules: explain in Egyptian Arabic in the conversation
 rather than pointing me at a markdown file, and never add AI co-author trailers
@@ -225,6 +227,64 @@ in the container entrypoint would have failed on every `docker compose up`.
 **How I noticed:** reading the Dockerfile against the new entrypoint behaviour
 before rebuilding, rather than after. Confirmed afterwards by F01-T18b.
 
+### 11. A security fix it proposed was right, but for the wrong reason
+
+An automated review flagged the seed for "hardcoded credentials". Taken at face
+value that is wrong - the assessment asks for seeded development credentials
+and they are documented in the README.
+
+**How I noticed the real problem:** I read what the seed actually does on its
+`update` path rather than only on `create`. It rewrites each user's password
+back to the published one and sets every API key back to `ACTIVE`. Combined
+with an entrypoint that seeded on **every** container start, that makes the
+seed a privilege-restoration mechanism: revoke a leaked key, restart, and it
+is live again.
+
+**Fix:** two independent gates - `SEED_DEV_DATA=true` in the entrypoint, and a
+`NODE_ENV=production` refusal inside the seed script itself. The overwrite
+behaviour was deliberately kept, because restoring a known state is what a
+development seed is for. The defect was the missing gate.
+
+**Why I am recording it:** the finding's headline was a false positive and its
+substance was a critical bug. Dismissing it on the headline - which was the
+obvious move - would have shipped the bug.
+
+**Verified by:** F02-T21, F02-T21b. Risk R-21.
+
+### 12. A test that reported the intended behaviour as a leak
+
+F02-T24 searched the API logs for the seeded password and found it - inside
+the seed's own startup banner, which prints the development credentials on
+purpose so a reviewer can sign in.
+
+**How I noticed:** the companion check, F02-T24b, passed at the same time,
+asserting that the banner was present. Both cannot be right.
+
+**The tempting fix was to loosen the assertion.** Instead I made it more
+precise: exclude the seed's own output block, then assert on everything else,
+and add F02-T24c, which performs a real login and a real API key request and
+re-reads the logs afterwards. The narrower test catches **more**, not less.
+
+### 13. Lost backslashes silently blanked an entire log filter
+
+The first version of that exclusion used `awk '/\[entrypoint\] seeding/'`. The
+backslashes did not survive the shell plumbing, leaving `/[entrypoint]/` -
+which in awk is a **character class** matching any one of those letters. Nearly
+every line matched, the filter emptied the log, and both log tests then passed
+by having nothing left to search.
+
+**How I noticed:** counting. A filter that drops 64 of 64 lines is not
+filtering, it is deleting. I checked the counts instead of trusting the PASS.
+
+**Fix:** `index($0, "literal string")` rather than a regex, which removes the
+escaping question entirely. Verified by a direct count: 64 in, 39 kept, 25
+dropped, the startup line retained and the banner gone.
+
+**This is the second time lost backslashes produced a silently wrong result**
+here - F00 defect D-2 was the first, where a stale `tsbuildinfo` made a build
+exit 0 while emitting nothing. The lesson applied both times: assert on the
+artefact, not on the exit status.
+
 ## What I decided, not the AI
 
 - Holding NestJS at 11 rather than upgrading Node machine-wide or swapping the
@@ -241,6 +301,11 @@ before rebuilding, rather than after. Confirmed afterwards by F01-T18b.
   accepting "the application writes both in one transaction" as sufficient.
 - Accepting `category` as a free string with normalisation (risk R-17) rather
   than an enum, because the category vocabulary belongs to the company.
+- Asking what "no CORS" actually protects before accepting it, which is how
+  the server-side `Origin` check became a fourth CSRF layer rather than the
+  design stopping at three.
+- Keeping the seed's overwrite behaviour and gating it, instead of weakening
+  what the seed does.
 
 ## Running record
 
@@ -251,3 +316,5 @@ before rebuilding, rather than after. Confirmed afterwards by F01-T18b.
 | 2026-11-19 | F00 implementation | Monorepo, Docker, health check, config validation. Four defects found and fixed. 17/17 acceptance checks, 13/13 tests |
 | 2026-11-20 | F01 design review | F00 re-verified. Schema, relationships, constraints and deletion behaviour agreed. Composite foreign key decision taken (ADR-011). Five open questions resolved before any code |
 | 2026-11-20 | F01 implementation | 8 tables, 7 enums, 5 hand-written CHECK constraints, idempotent seed. Four defects found and fixed. 11/11 acceptance checks, 53/53 tests |
+| 2026-11-20 | F02 design review | Seven comparisons, five diagrams, the API contract, and a security finding on the F01 seed. An eighth decision - the server-side Origin check - came out of a question from the project owner |
+| 2026-11-20 | F02 implementation | Three global guards, typed principal, four CSRF layers, credential redaction, the seed gate. Four defects found and fixed. 16/16 acceptance checks, 112/112 tests |

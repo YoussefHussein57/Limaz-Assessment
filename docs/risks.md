@@ -31,7 +31,7 @@ evidence that supports its status. Where a mitigation is partial, the status is
 | **Mitigation** | `companyId` resolved only from the API key record or the session. Every query carries `WHERE company_id = <authenticated>`. DTOs use `whitelist` and `forbidNonWhitelisted`, so a body-supplied `companyId` is stripped. `404`, never `403` (ADR-003) |
 | **Automated verification** | F02-T* - authenticate as A, request each of B's record types by real id, assert `404` and a byte-identical body to the nonexistent case. **F01 landed the schema half:** F01-T09 and F01-T09b prove a review cannot claim a tenant its expense does not belong to (ADR-011) |
 | **Manual verification** | Direct API calls bypassing the UI entirely |
-| **Status** | `IN PROGRESS` - the database can no longer hold cross-tenant review data; the API boundary lands in F02 |
+| **Status** | `MITIGATED` for the mechanism. F02 built the API boundary: tenant from a typed principal only, `tenantScope()` as the single filter source, `404` not `403`, and **F02-T29** as the negative control. **Re-verification is still required** on the real expense, review and admin endpoints in F03, F05 and F08 - F02 proved it through a test-only controller |
 
 ### R-02 - Frequency rule bypassed under concurrency
 
@@ -118,7 +118,7 @@ evidence that supports its status. Where a mitigation is partial, the status is
 | **Mitigation** | Same-origin deployment via the Next proxy; `SameSite=Lax`; strict CORS allowlist; a custom header required on all mutations; all mutations use non-`GET` methods (ADR-008) |
 | **Automated verification** | **F00-T05b** confirms the deployment is same-origin (no CORS header). F02-T* will assert the cookie attributes and reject a cross-origin mutation |
 | **Manual verification** | - |
-| **Status** | `IN PROGRESS` - the same-origin foundation is verified; the cookie itself lands in F02 |
+| **Status** | `MITIGATED`. Four layers built and tested: `SameSite=Lax`, no CORS at all, a required `X-Limaz-Client` header, and a **server-side `Origin` check** that moves the judgement out of the browser and into our own code. F02-T16, T16b, T16f, T30, T30c |
 
 ### R-08 - API key or session token leaked into logs
 
@@ -132,7 +132,7 @@ evidence that supports its status. Where a mitigation is partial, the status is
 | **Mitigation** | Redaction interceptor for `x-api-key` and `authorization`; exception filter never echoes headers; pattern scrubber for key-shaped strings; secrets travel in headers only, never query strings; plaintext returned exactly once (ADR-006). **Already applied in F00:** the health endpoint returns a generic `"database unreachable"` and logs the driver error server-side only, because Prisma connection errors embed the password |
 | **Automated verification** | `health.unit.spec.ts` asserts the response contains neither the driver message nor the password. **F00-T02b** asserts no connection string in the live health response. `env.spec.ts` asserts the config error never echoes the variable value. **F01:** F01-T14b and F01-T14c assert passwords and API keys are stored only as hashes, and F01-T18i asserts no plaintext key reached the live database |
 | **Manual verification** | `grep` over captured container logs before submission |
-| **Status** | `IN PROGRESS` - the F00 surfaces are covered and tested; the interceptor lands with F02 |
+| **Status** | `MITIGATED`. `redact()` scrubs by header name, by key name and by pattern; `HttpExceptionFilter` never echoes request headers; credentials travel in headers only, never query strings. F02-T24, T24a, T24b, T24c, plus a live scan of the container logs |
 
 ### R-09 - Advisory lock hash collision
 
@@ -266,13 +266,74 @@ evidence that supports its status. Where a mitigation is partial, the status is
 | **Manual verification** | - |
 | **Status** | `ACCEPTED` - knowingly carried, with the reasoning recorded |
 
+### R-18 - XSS defeats every CSRF layer
+
+| | |
+|---|---|
+| **Component** | Browser session security |
+| **Description** | Script injected into our own page runs same-origin. It can set `X-Limaz-Client`, it sends a correct `Origin`, and the browser attaches the session cookie - so every CSRF layer passes |
+| **Likelihood** | Low for now; the frontend renders almost nothing user-supplied yet |
+| **Impact** | High - any action the signed-in user can take |
+| **Severity** | High |
+| **Mitigation (partial)** | `HttpOnly` stops the token being read and exfiltrated, so the session cannot be used elsewhere. React escapes by default |
+| **Residual hole** | **The attacker does not need to read the cookie.** They act from inside the page. Closing this needs a Content-Security-Policy and discipline about rendering user-supplied content - neither is built |
+| **Automated verification** | None, and that is the point: the CSRF suite cannot catch this |
+| **Manual verification** | Review of every place F06 to F08 render user input |
+| **Status** | `ACCEPTED` - stated rather than implied |
+
+### R-19 - Login is not rate limited
+
+| | |
+|---|---|
+| **Component** | Authentication |
+| **Description** | Nothing throttles repeated login attempts, so password guessing is bounded only by the bcrypt cost factor |
+| **Likelihood** | Medium |
+| **Impact** | Medium - the seeded passwords are strong, but a real deployment would not be so lucky |
+| **Severity** | Medium |
+| **Mitigation (partial)** | bcrypt at cost 10 puts each attempt at roughly 100 ms, so one attacker manages about 10 per second per connection. Generic errors reveal nothing about which half of the pair was wrong |
+| **Residual hole** | **A distributed attempt is unaffected.** Needs per-IP and per-account throttling plus lockout after repeated failures |
+| **Automated verification** | None |
+| **Manual verification** | - |
+| **Status** | `ACCEPTED` - outside the stated scope of F02, recorded for the README |
+
+### R-20 - A developer forgets to apply the tenant filter
+
+| | |
+|---|---|
+| **Component** | Every company-scoped query |
+| **Description** | `tenantScope(principal)` has to be spread into each `where`. Omitting it returns rows from every tenant, and the endpoint still appears to work |
+| **Likelihood** | Medium, and rising with every endpoint added |
+| **Impact** | Catastrophic - this is R-01 arriving by a different road |
+| **Severity** | **Critical** |
+| **Mitigation (partial)** | One helper, so `grep tenantScope` finds every scoped query. The tenant comes from a typed principal, not a loose string. `tenantScope()` throws for a principal with no tenant rather than returning an empty filter, because an empty filter means either no rows or all rows. Cross-tenant tests on every feature that adds endpoints |
+| **Residual hole** | **Nothing prevents the omission.** PostgreSQL row-level security would; it was rejected for lack of Prisma support, the `SET LOCAL` requirement per transaction, friction under transaction-mode pooling, and the admin needing `BYPASSRLS`. Recorded as the upgrade path |
+| **Automated verification** | F02-T29 negative control, plus per-feature cross-tenant tests from F03 onwards |
+| **Manual verification** | Review every new query against a company-owned table |
+| **Status** | `ACCEPTED` - knowingly carried, with the upgrade path named |
+
+### R-21 - The development seed could restore revoked credentials
+
+| | |
+|---|---|
+| **Component** | Container entrypoint, development seed |
+| **Description** | The entrypoint ran the seed on **every** container start, with `NODE_ENV=production`, and the seed update branch rewrites each user password to the one published in this repository and sets every API key back to `ACTIVE`. A restart would undo a password change and **un-revoke a leaked key** |
+| **Likelihood** | High, had the image ever reached a real environment |
+| **Impact** | **Catastrophic** - a published admin password restored, and revocation rendered meaningless |
+| **Severity** | **Critical** |
+| **Mitigation** | Two independent gates. The entrypoint skips seeding unless `SEED_DEV_DATA=true`; the seed script itself refuses when `NODE_ENV=production` without that opt-in. `docker-compose.yml` sets it explicitly because that file is the development stack; a real deployment does not |
+| **Why the overwrite was kept** | Restoring a known state is what a development seed is for. The defect was the missing gate, not the behaviour |
+| **Automated verification** | **F02-T21** (non-zero exit with an explanation), **F02-T21b** (the refusal names no credential) |
+| **Manual verification** | `NODE_ENV=production node dist/prisma/seed.js` |
+| **Status** | `MITIGATED` |
+| **Source** | Automated security review of commit `c7a024b` |
+
 ## Summary
 
 | Severity | Open | In progress | Mitigated | Accepted |
 |---|---|---|---|---|
-| Critical | R-02 | R-01, R-03, R-08, R-10 | R-05 | - |
-| High | R-04, R-06, R-15 | R-07 | R-12, R-14 | - |
-| Medium | R-13 | - | R-16 | R-11, R-17 |
+| Critical | R-02 | R-03, R-10 | R-01, R-05, R-21 | R-20 |
+| High | R-04, R-06, R-15 | - | R-07, R-08, R-12, R-14 | R-18 |
+| Medium | R-13 | - | R-16 | R-11, R-17, R-19 |
 | Low | - | - | - | R-09 |
 
 ## Review log
@@ -283,4 +344,6 @@ evidence that supports its status. Where a mitigation is partial, the status is
 | 2026-11-19 | Architecture review by the project owner | R-07 to R-13 added |
 | 2026-11-19 | F00 completed | R-14 added (realised during implementation). R-05 and R-12 moved to `MITIGATED` with named evidence. R-07, R-08 and R-10 moved to `IN PROGRESS` |
 | 2026-11-19 | Automated security review of the F00 commit | R-16 added and mitigated: all published ports bound to `127.0.0.1` |
+| 2026-11-20 | Automated security review of commit c7a024b | R-21 raised and mitigated: the seed could restore revoked credentials on any container restart |
+| 2026-11-20 | F02 completed | R-18, R-19 and R-20 added and accepted. R-01, R-07 and R-08 moved to MITIGATED with named F02 evidence; R-01 keeps an explicit re-verification requirement for F03, F05 and F08 |
 | 2026-11-20 | F01 completed | R-17 added and accepted. R-01 and R-03 moved to `IN PROGRESS` with named F01 evidence. R-05 re-verified now that migrations and a seed actually run. R-04 and R-08 gained supporting evidence |

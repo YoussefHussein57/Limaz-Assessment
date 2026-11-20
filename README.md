@@ -13,10 +13,12 @@ identifier belonging to another company.
 
 ## Current state
 
-> **F00 (foundation) and F01 (database and seed) are complete.** One
+> **F00, F01 and F02 are complete.** One
 > `docker compose up` starts the stack, applies migrations and seeds two
-> companies with different policies, their users, API keys and sample
-> expenses. **No API behaviour exists yet** beyond `/health`.
+> companies. Both caller types authenticate: company backends with an API key,
+> managers and the platform admin with a database-backed session. Tenant
+> isolation is enforced and tested. **No business endpoints exist yet** -
+> expense submission, policy evaluation and reviews are F03 to F05.
 >
 > This is an incremental build. Each feature is implemented, tested and
 > reviewed before the next one begins. The table below is the honest status.
@@ -24,8 +26,8 @@ identifier belonging to another company.
 | Feature | Scope | Status |
 |---|---|---|
 | **F00** | Monorepo, Docker, health check, config validation, tooling | **Done** - 17/17 acceptance checks |
-| **F01** | Database schema, migrations, seed data | **Done** - 11/11 acceptance checks, 53/53 tests |
-| F02 | API key auth, manager and admin sessions, tenant isolation | Not started |
+| **F01** | Database schema, migrations, seed data | **Done** - 11/11 acceptance checks |
+| **F02** | API key auth, manager and admin sessions, tenant isolation | **Done** - 16/16 acceptance checks, 62 new tests |
 | F03 | Expense submission and idempotency | Not started |
 | F04 | Policy rules, decision precedence, frequency concurrency | Not started |
 | F05 | Review lifecycle and concurrent resolution | Not started |
@@ -35,7 +37,7 @@ identifier belonging to another company.
 | F09 | Cross-feature regression and security testing | Not started |
 | F10 | Final documentation and submission readiness | Not started |
 
-The architectural decisions for F02 to F05 are already made and recorded in
+The architectural decisions for F03 to F05 are already made and recorded in
 [`docs/adr/`](docs/adr/). They are decided, not implemented.
 
 ---
@@ -96,8 +98,18 @@ the database - bcrypt for passwords, SHA-256 for API keys.
 | Nile Logistics | `lmz_dev_nile_7Qk2PmXaR4tVbN8cLw3ZyH6dJeF5uG9s` |
 | Delta Consulting | `lmz_dev_delta_3Xn9TbVcA7pKmR2wQy8ZsL4dHe6uJ5g` |
 
-Login and API-key authentication are built in F02; until then these identify
-the seeded rows.
+Try them:
+
+```bash
+curl -i -X POST http://localhost:3000/api/v1/auth/login   -H 'content-type: application/json' -H 'x-limaz-client: 1'   -d '{"email":"manager@nile-logistics.test","password":"NileManager!2026"}'
+```
+
+```bash
+curl -s http://localhost:3001/v1/auth/me -H 'x-api-key: lmz_dev_nile_7Qk2PmXaR4tVbN8cLw3ZyH6dJeF5uG9s'
+```
+
+The `x-limaz-client` header is required on every state-changing browser
+request; API key callers are exempt. See "Choices worth knowing about" below.
 
 ### Seeded data
 
@@ -142,8 +154,8 @@ npm test --workspace @limaz/api
 ```
 
 ```
-Test Suites: 6 passed, 6 total
-Tests:       53 passed, 53 total
+Test Suites: 10 passed, 10 total
+Tests:       112 passed, 112 total
 ```
 
 Integration tests run against a throwaway database named `limaz_test`, dropped
@@ -164,9 +176,14 @@ bash scripts/verify-f00.sh
 bash scripts/verify-f01.sh
 ```
 
+```bash
+bash scripts/verify-f02.sh
+```
+
 Each prints a PASS/FAIL line per test id, matching
 [`docs/testing/F00-test-matrix.md`](docs/testing/F00-test-matrix.md) and
-[`docs/testing/F01-test-matrix.md`](docs/testing/F01-test-matrix.md).
+[`docs/testing/F01-test-matrix.md`](docs/testing/F01-test-matrix.md) and
+[`docs/testing/F02-test-matrix.md`](docs/testing/F02-test-matrix.md).
 
 Static gates:
 
@@ -195,6 +212,7 @@ apps/
     app/api/      Same-origin proxy to the API
 docs/
   adr/          Eleven architecture decision records
+  requirements-traceability.md  Every assessment requirement, mapped to evidence
   architecture/ Overview and the data model, with the ERD
   risks.md      Risk register, with evidence per entry
   features/     One document per feature
@@ -210,6 +228,16 @@ keeps working as CSRF protection, and there is no CORS configuration anywhere.
 **Nothing reads `process.env` except one file.** `env.schema.ts` validates
 configuration with Zod and the process refuses to start if anything is missing
 or malformed, naming the offending variables without printing their values.
+
+**Both caller types are separate kinds of principal.** An API key
+authenticates a *company*; a session authenticates a *person*. A valid API key
+can never take a manager-only or admin-only action, however genuine it is.
+
+**There is deliberately no CORS configuration.** CORS is permission the server
+*grants*, not a lock it applies - with no CORS headers the browser denies by
+default, which is the strictest posture. Cross-origin requests are refused by
+a server-side `Origin` check instead, so the judgement does not depend on the
+browser.
 
 **Guarantees live in the database, not in application checks.** Idempotency is a
 unique constraint. Concurrent review resolution is a single conditional
@@ -321,12 +349,14 @@ The compose file is the development and review artefact. For a real deployment:
    reconciliation of undelivered events need designing, not just coding.
 2. **Close risk R-11** - the back-dated frequency bypass - with the sliding
    sub-window evaluation described in ADR-002.
-3. **Browser end-to-end tests.** Deliberately deferred: none of the four core
+3. **Rate limiting on login** and a Content-Security-Policy. Login throttling
+   and XSS defence are recorded as risks R-19 and R-18 rather than implied.
+4. **Browser end-to-end tests.** Deliberately deferred: none of the four core
    guarantees is provable by a browser test, and the time was better spent on
    integration and concurrency tests that do prove them.
-4. **Load testing** the frequency path to find where advisory-lock contention
+5. **Load testing** the frequency path to find where advisory-lock contention
    actually begins, rather than guessing. Only then consider the Redis counter.
-5. **Rate limiting** per API key, and audit logging for admin actions.
+6. **Rate limiting** per API key, and audit logging for admin actions.
 
 ## Assumptions
 
