@@ -36,10 +36,14 @@ export function MobileNav({ items, title }: { items: readonly NavItem[]; title: 
       </Dialog.Trigger>
 
       <Dialog.Portal>
-        <Dialog.Overlay className="fixed inset-0 z-40 bg-text/40 lg:hidden" />
+        {/* The overlay fades and the panel slides. Both are 150-200ms and
+            both are cancelled under prefers-reduced-motion. The point is that
+            the drawer is seen to come FROM the edge, so it is obvious where it
+            went when it closes - not decoration. */}
+        <Dialog.Overlay className="anim-overlay fixed inset-0 z-40 bg-text/40 lg:hidden" />
 
         <Dialog.Content
-          className="fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] flex-col border-r border-border bg-surface lg:hidden"
+          className="anim-drawer fixed inset-y-0 left-0 z-50 flex w-72 max-w-[85vw] flex-col border-r border-border bg-surface lg:hidden"
           // Radix would otherwise announce only the title; this says what the
           // panel is for.
           aria-describedby={undefined}

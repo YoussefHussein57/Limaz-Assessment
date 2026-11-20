@@ -11,20 +11,41 @@ apps/web/
     layout.tsx              font, design tokens
     page.tsx                sends you where you belong
     (auth)/login/           OUTSIDE the protected group - see "No redirect loop"
-    (app)/layout.tsx        the server auth gate
+    icon.svg                the app icon Next serves as the favicon
+    (app)/layout.tsx        the server auth gate + the query provider
     (app)/dashboard/        manager workspace
+      page.tsx              overview            SERVER
+      loading.tsx           error.tsx
+      expenses/
+        page.tsx            listing shell       SERVER
+        [expenseId]/        page, loading, error, not-found   SERVER
     (app)/admin/layout.tsx  the role gate
     api/[...path]/          same-origin proxy to the API
   components/
-    ui/                     button, field, badge, alert, card, spinner, skeleton
+    ui/                     button, field, badge, alert, card, spinner, skeleton,
+                            select, search-input, empty-state
     layout/                 app-shell, sidebar-nav, mobile-nav, user-menu, page-header
     auth/                   login-form
+    dashboard/              stat-card
+    expenses/               expense-list (CLIENT), expense-rows, expense-filters-bar,
+                            reason-card, status-badges
+  hooks/
+    use-expense-filters.ts  URL <-> filter state
   lib/
     auth.ts                 SERVER only - reads the cookie, calls the API
     auth-shared.ts          types and pure helpers - safe on both sides
+    api.ts                  SERVER fetch, forwards the session cookie
+    api-client.ts           BROWSER fetch, through /api/*
+    api-error.ts            ApiError - safe on both sides
+    expense-types.ts        the API's shapes, as this app reads them
+    expense-reasons.ts      rule code -> readable evidence   (+ .spec.ts)
+    format.ts               money and dates                  (+ .spec.ts)
+    queries.ts              query keys and fetchers
     nav.ts                  role to navigation
     cn.ts
-  providers/auth-provider.tsx
+  providers/
+    auth-provider.tsx       the user the server already resolved
+    query-provider.tsx      server state, keyed by user id
   fonts/                    InterVariable.woff2, its OFL licence, and a README
 ```
 
@@ -203,20 +224,156 @@ Nothing animates for decoration.
 
 ## Honest placeholders
 
-The dashboard and admin pages show the **real** identity and company the
-server resolved, and say plainly what is not built.
+Every page shows the **real** identity and company the server resolved, and
+says plainly what is not built.
 
-There are no statistics, no charts and no sample figures. Every number would
-be invented, and an invented number is something to be asked about in a review
-that nobody can defend. Navigation marks unbuilt destinations with the feature
-that delivers them rather than hiding them or linking to a 404.
+**Updated by F06.** The dashboard now carries real statistics - every one of
+them read from the database in a single aggregate query. What it still does not
+carry is anything that would have to be **invented**: no trend, no percentage
+change, no sparkline, no activity feed. The system records no history of its
+own counts, so each of those would be a number nobody could defend in a review.
 
-## Adding a page
+Navigation marks unbuilt destinations with the feature that delivers them
+rather than hiding them or linking to a 404 - and where a reader would look for
+a control that F07 brings, the page says so instead of showing a button that
+does nothing.
+
+> The "Adding a page" checklist that used to sit here is superseded by the one
+> at the end of this document, which adds the Server/Client decision and the
+> query-key rule.
+
+---
+
+# Data fetching, from F06
+
+## The dividing line
+
+**Client fetching where the request changes under the user's fingers; server
+fetching where it does not.**
+
+| Page | Rendering | Why |
+|---|---|---|
+| `/dashboard` | **Server** | No parameter the reader can change |
+| `/dashboard/expenses/[id]` | **Server** | The URL is the entire state |
+| `/dashboard/expenses` | Server shell + **Client** list | Four filters, a search box and a cursor |
+
+Marking the whole application a Client Component to have one caching story
+means paying for a round trip, a spinner and a bundle on pages that need none
+of it. The brief rules it out in those words, and it would be the wrong call
+anyway.
+
+## Two fetch paths, one credential
+
+```
+Server Component  ──  lib/api.ts        ──>  http://api:3001  (cookie forwarded)
+Client Component  ──  lib/api-client.ts ──>  /api/*  ──>  proxy  ──>  API
+```
+
+A Server Component is already on the server, so routing it through Next's own
+route handler would be a pointless extra hop - and would need an absolute URL
+back to ourselves, which is the self-referential mistake F00-T05 caught in
+`rewrites()`.
+
+A Client Component must use the **relative** path. That is what keeps the
+session cookie first-party, keeps `SameSite=Lax` working as CSRF protection,
+and means no CORS configuration exists anywhere (ADR-008, A10). An absolute URL
+in `api-client.ts` would undo all three.
+
+Neither path holds a token. The server forwards a cookie it read; the browser
+has one attached for it.
+
+## Query keys
+
+```ts
+expenseKeys.all      = ['expenses']
+expenseKeys.lists()  = ['expenses', 'list']
+expenseKeys.list(f,c)= ['expenses', 'list', filters, cursor]
+expenseKeys.detail(i)= ['expenses', 'detail', id]
+```
+
+The filters are the **last** element, so `lists()` matches every filter set by
+prefix. That is what makes F07's invalidation one call instead of a loop over
+every combination a reader might have open.
+
+The filters being *in* the key is also what makes a stale response impossible:
+the answer to `q=cas` is written into the `q=cas` entry and nowhere else, so it
+has no slot to land in once the filter has moved on. Not a race handled - a
+race that does not exist.
+
+## Cache boundary
+
+```tsx
+<QueryProvider key={user.id}>   // app/(app)/layout.tsx
+```
+
+A different user **unmounts** the provider and a new `QueryClient` is built.
+There is no cache to read from, rather than an old cache somebody remembered to
+clear - and `queryClient.clear()` on logout works only as long as every exit
+path calls it, including session expiry and a back-navigation after logout.
+
+`useState(() => new QueryClient())` is the other half: a module-level client
+would be shared by every session in the tab.
+
+## Defaults, and why
+
+| Setting | Value | Reason |
+|---|---|---|
+| `staleTime` | 30s | Navigate to an expense and back renders instantly. Zero makes "back" a reload; Infinity never notices a new submission |
+| `gcTime` | 5 min | Kept while the reader is likely to return |
+| `refetchOnWindowFocus` | **false** | Refetching on return can reorder rows under a cursor mid-read |
+| `retry` | **No 4xx**, 2 otherwise | A 401 will not become a 200 by asking again |
+| `placeholderData` | `keepPreviousData` | Paging does not blank the table |
+
+## Filter state lives in the URL
+
+One source of truth. A filtered view becomes a shareable link, the back button
+works, and reload keeps your place - none of which needs code.
+
+What is **prevented** is a second copy of the same state. A `useState` beside a
+query parameter is two values that must be kept equal, and every bug in that
+class looks the same: the input says one thing and the results say another.
+
+**The one exception** is the search box, which holds its own *text* for the
+length of its 300ms debounce. "What is in the box right now" is a different
+fact from "what the list is filtered by"; driving the input's value from the
+URL makes every keystroke a navigation and loses the caret mid-word.
+
+**Changing a filter drops the cursor.** A cursor means "continue after this row
+*under these filters*"; carrying it asks the server to continue a list that no
+longer exists.
+
+## Money and dates
+
+Both formatters are **pure** and both are fixed to `en-US` and `Asia/Riyadh` -
+for a technical reason, not a stylistic one. Server-rendered pages hydrate in
+the browser, and a viewer-dependent format produces one string on the server
+and another in the browser: a hydration mismatch on every row, for every viewer
+outside the zone.
+
+Minor units are converted by **inserting the decimal point into the digit
+string**, never by dividing. The exponent comes from `Intl`, not from a
+hard-coded 100 - JPY has no minor unit, and `/100` would be wrong by a factor
+of a hundred while still looking plausible.
+
+## Reading a Json column
+
+`detail` and `policySnapshot` are JSON. Their shape is a convention between two
+deployments, not a compile-time guarantee. Every reader validates what it needs
+and falls back; an unknown rule code renders with its raw code and its scalar
+evidence rather than crashing the page. A rule added to the backend should
+degrade a page to *less explanation*, not to a blank screen.
+
+## Adding a page, updated
 
 1. Put it under `app/(app)/`. The gate already covers it.
-2. Open with `<PageHeader>` - it renders the only `h1`.
-3. Take the tenant from the server, never from a query parameter.
-4. Use design tokens. No raw hex.
-5. If it has a table, wrap it in `overflow-x-auto`.
-6. Add the destination to `lib/nav.ts` and remove its `comingIn`.
-7. Check it at 360px before calling it done.
+2. **Decide Server or Client by the rule above**, and write down which.
+3. Open with `<PageHeader>` - it renders the only `h1`.
+4. Take the tenant from the server, never from a query parameter.
+5. Use design tokens. No raw hex.
+6. A table below `md` becomes cards, from **one** component - not a second one,
+   and not a horizontal scroll that hides a column.
+7. Add `loading.tsx` and `error.tsx` beside it. `error.tsx` shows a fixed
+   sentence and the digest, never `error.message`.
+8. If it fetches on the client, put every parameter in the query key.
+9. Add the destination to `lib/nav.ts` and remove its `comingIn`.
+10. Check it at 360px, in a browser, before calling it done.

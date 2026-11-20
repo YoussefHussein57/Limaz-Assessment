@@ -13,7 +13,7 @@ identifier belonging to another company.
 
 ## Current state
 
-> **F00, F01, F02, F02.1 and F03 are complete.** One
+> **F00 through F06 are complete.** One
 > `docker compose up` starts the stack, applies migrations and seeds two
 > companies. Both caller types authenticate: company backends with an API key,
 > managers and the platform admin with a database-backed session. Tenant
@@ -34,8 +34,23 @@ identifier belonging to another company.
 > it with one line in `app.module.ts` and no migration. See
 > [`docs/features/F04-policy-engine.md`](docs/features/F04-policy-engine.md).
 >
-> **Still to come:** manager review resolution (F05) and the UI that shows
-> any of this (F06-F08).
+> **The manager dashboard is live.** Signing in now shows real figures -
+> total, approved, pending review and rejected, all read from a **single**
+> aggregate query so they come from one database snapshot and add up. From
+> there: a searchable, filterable, keyset-paginated expense list, and a detail
+> page carrying every policy reason with the evidence the engine recorded, the
+> policy snapshot the expense was judged against, and the human review outcome.
+>
+> The three facts the rest of this system is built on are kept separate and
+> shown together: what the **policy decided**, what the expense's **status** is
+> now, and what a **human** said. An expense can read `Policy: Review` and
+> `Approved` at once, and the page explains why that is not a contradiction.
+>
+> There are no trends, no percentage changes and no charts. Each would have to
+> be invented - the system records no history of its own counts.
+>
+> **Still to come:** resolving a review and editing a policy from the UI (F07),
+> and the platform admin panel (F08).
 >
 > This is an incremental build. Each feature is implemented, tested and
 > reviewed before the next one begins. The table below is the honest status.
@@ -49,13 +64,13 @@ identifier belonging to another company.
 | **F03** | Expense submission, canonicalisation, idempotency, concurrency | **Done** - 130 new tests |
 | **F04** | Policy rules, decision precedence, frequency concurrency | **Done** - 63 new tests. **POST /v1/expenses is live** |
 | **F05** | Review lifecycle, manager resolution, concurrent safety | **Done** - 66 new tests. **The review API is live** |
-| F06 | Manager dashboard | Not started |
+| **F06** | Manager dashboard, expense listing, filtering, expense detail | **Done** - 67 new tests, 23 browser checks at six widths. **The dashboard is live** |
 | F07 | Review and policy UI | Not started |
 | F08 | Platform admin panel | Not started |
 | F09 | Cross-feature regression and security testing | Not started |
 | F10 | Final documentation and submission readiness | Not started |
 
-The architectural decisions for F03 to F05 are already made and recorded in
+The architectural decisions for F07 and F08 are already made and recorded in
 [`docs/adr/`](docs/adr/). They are decided, not implemented.
 
 ---
@@ -173,13 +188,28 @@ docker compose down -v   # discard the volume too
 ```bash
 docker compose up -d db
 npm ci
-npm test --workspace @limaz/api
+npm test            # both workspaces
 ```
 
 ```
-Test Suites: 26 passed, 26 total
-Tests:       371 passed, 371 total
+@limaz/api   Test Suites: 30 passed, 30 total
+             Tests:      417 passed, 417 total
+
+@limaz/web   Test Suites:  2 passed,  2 total
+             Tests:       22 passed,  22 total
 ```
+
+The API suite needs PostgreSQL. The web suite does not: it covers the two
+**pure** modules in the frontend - money and date formatting, and reading the
+`Json` reason columns defensively - which is where a silent wrong answer is
+easiest to produce. It is run under a deliberately foreign timezone
+(`TZ=America/New_York npm test --workspace @limaz/web`) to prove the display
+timezone is fixed rather than inherited from whoever runs it.
+
+Component *behaviour* has no automated runner. Those scenarios are verified in
+a real browser and recorded as `PASS (browser)` with the screenshot that shows
+it - never marked `PASS` without being run. See
+[`docs/testing/F06-test-matrix.md`](docs/testing/F06-test-matrix.md).
 
 Integration tests run against a throwaway database named `limaz_test`, dropped
 and recreated on every run with the migrations applied through the real
@@ -265,13 +295,19 @@ apps/
     src/health/   GET /health
   web/          Next.js App Router
     app/api/      Same-origin proxy to the API
+    app/(app)/dashboard/   Overview, expense list, expense detail
+    components/   ui primitives, layout, dashboard, expenses
+    lib/          format, expense-reasons, queries, the two fetch paths
+    providers/    auth (server-resolved user), query (server state)
 docs/
   adr/          Eleven architecture decision records
   requirements-traceability.md  Every assessment requirement, mapped to evidence
   architecture/ Overview and the data model, with the ERD
   risks.md      Risk register, with evidence per entry
   features/     One document per feature
-  testing/      Test matrices with actual results
+  testing/      Test matrices with actual results, plus manual cycles
+  interview/    Five defence questions per feature
+  screenshots/  Real browser captures of the implemented UI
 ```
 
 ### Choices worth knowing about

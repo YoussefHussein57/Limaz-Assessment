@@ -12,6 +12,7 @@ import {
 import { CurrentPrincipal, Roles } from '../auth/decorators';
 import type { ManagerPrincipal, Principal } from '../auth/principal.types';
 import { tenantScope } from '../common/tenant';
+import { assertUuid } from '../common/uuid';
 import { listReviewsSchema } from './dto/list-reviews.dto';
 import { resolveReviewSchema } from './dto/resolve-review.dto';
 import { ReviewQueryService } from './review-query.service';
@@ -72,7 +73,7 @@ export class ReviewsController {
     // uuid cast. It is deliberately NOT a 404: the id is unusable, which is a
     // different fact from "there is no such review", and conflating them
     // would hide a client bug behind a plausible-looking answer.
-    assertUuid(reviewId);
+    assertUuid(reviewId, 'reviewId');
 
     return this.queries.findOne(companyId, reviewId);
   }
@@ -100,7 +101,7 @@ export class ReviewsController {
     // tenantScope throws for a principal with no tenant, so this narrowing is
     // backed by a runtime guarantee rather than an assumption.
     tenantScope(principal);
-    assertUuid(reviewId);
+    assertUuid(reviewId, 'reviewId');
 
     const parsed = resolveReviewSchema.safeParse(body);
 
@@ -109,17 +110,6 @@ export class ReviewsController {
     }
 
     return this.resolution.resolve(principal as ManagerPrincipal, reviewId, parsed.data);
-  }
-}
-
-const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/iu;
-
-function assertUuid(value: string): void {
-  if (!UUID.test(value)) {
-    throw new BadRequestException({
-      error: 'invalid_request',
-      message: 'reviewId must be a UUID.',
-    });
   }
 }
 

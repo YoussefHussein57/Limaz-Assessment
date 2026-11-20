@@ -156,12 +156,21 @@ export async function seed(prisma: PrismaClient): Promise<SeedCounts> {
               outcome: review.outcome,
               resolvedByUserId: review.resolvedByUserId,
               resolvedAt: review.resolvedAt,
+              // A review is opened WHEN THE EXPENSE IS SUBMITTED, so it is
+              // stamped from the expense rather than left to default to
+              // now(). Without this the seeded reviews are "opened" at
+              // whenever the container last started - which is AFTER the
+              // fixture resolution timestamps, so the expense detail page
+              // showed a review resolved before it was opened. Caught by
+              // reading the real page, not by a test.
+              createdAt: expense.spentAt,
             },
             update: {
               state: review.state,
               outcome: review.outcome,
               resolvedByUserId: review.resolvedByUserId,
               resolvedAt: review.resolvedAt,
+              createdAt: expense.spentAt,
             },
           });
         }

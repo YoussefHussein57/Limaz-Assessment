@@ -4,6 +4,7 @@ import { AuthModule } from './auth/auth.module';
 import { AuthenticationGuard, AuthorizationGuard, CsrfGuard } from './auth/guards';
 import { HttpExceptionFilter } from './common/http-exception.filter';
 import { ConfigModule } from './config/config.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 import { ExpensesModule } from './expenses/expenses.module';
 import { PolicyEngineEvaluator } from './expenses/policy/policy-engine.evaluator';
 import { HealthModule } from './health/health.module';
@@ -47,6 +48,9 @@ import { ReviewsModule } from './reviews/reviews.module';
     // it has no dependency that had to exist before the routes could be
     // published.
     ReviewsModule,
+    // F06: the manager dashboard's aggregate figures. Read-only, and in its
+    // own namespace so `summary` can never be parsed as an expense id.
+    DashboardModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: CsrfGuard },

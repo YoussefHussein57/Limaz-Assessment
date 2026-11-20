@@ -68,22 +68,27 @@ however much code exists for it.
 | Requirement | Feature | Status |
 |---|---|---|
 | A person can sign in and out of the web application | F02.1 | **DONE** - F02.1-T01, T02, T03, T08 |
-| Manager dashboard: expenses, decisions, open reviews, policy editing | F02.1 (shell), F06, F07 | **PARTIAL** - the shell, routing and identity are done; the content is F06 and F07 |
+| Manager dashboard: expenses, decisions, open reviews, policy editing | F02.1 (shell), **F06**, F07 | **PARTIAL** - expenses, decisions and the review outcome are **DONE** (F06-T22, T23, T27, T28); **policy editing and resolving a review are F07** |
+| Manager sees company-wide expense totals by current status | **F06** | **DONE** - one `groupBy`, one snapshot; F06-T01, T01b, T03, T04 |
+| Manager lists, searches, filters and pages their company's expenses | **F06** | **DONE** - F06-T06, T14 to T19c |
+| Manager opens one expense with every reason and the historical policy | **F06** | **DONE** - F06-T11, T12, T13 |
+| Original automated decision and current status shown as distinct facts | **F06** | **DONE** - F06-T13, T28; `status-badges.tsx` |
 | Admin panel: companies, creation, API keys | F02.1 (shell), F08 | **PARTIAL** - the shell and role gate are done; the content is F08 |
-| Responsive, usable on a small screen | F02.1 | **DONE** - no overflow measured at 360, 390, 768, 1024, 1440 and 1920; F02.1-T12 |
-| Accessible: contrast, focus, keyboard, labels | F02.1 | **DONE** - 15/15 contrast pairs measured; F02.1-T13, T14 |
+| Responsive, usable on a small screen | F02.1, **F06** | **DONE** - re-verified in a real browser at 360, 390, 768, 1024, 1440 and 1920 on all three new pages; F06-T39 to T44 |
+| Accessible: contrast, focus, keyboard, labels | F02.1, **F06** | **PARTIAL** - 15/15 contrast pairs measured and no new token introduced; status never carried by colour alone (F06-T47). **A full tab-order walk was not performed** (F06-T46) and no conformance claim is made |
 | Seeded credentials not exposed in the production-facing interface | F02.1 | **DONE** - F02.1-creds |
-| Clear loading and error states | F02.1 | **PARTIAL** - login, unreachable API and role denial are done; data-loading states arrive with data in F06 |
-| Every rule holds when the API is called directly | F02 | **DONE** - all F02 tests call the API, never a UI |
+| Clear loading and error states | F02.1, **F06** | **PARTIAL** - loading skeletons, both empty states, error boundaries and the 404 page are built and browser-verified (F06-T32, T33, T34). **A forced server failure was not injected in the browser** (F06-T35) |
+| Every rule holds when the API is called directly | F02, **F06** | **DONE** - every F06 backend test calls the API, never a UI |
 
 ## Section 7 - Tests
 
 | Requirement | Evidence | Status |
 |---|---|---|
-| Tenant isolation | F02-T13, T14, T15, **T29** | **PARTIAL** - re-proven on real endpoints in F03, F05, F08 |
-| Idempotency, including two simultaneous requests | F03 | **PENDING** |
-| Concurrent resolve | F05 | **PENDING** |
-| Which decision wins | F04 | **PENDING** |
+| Tenant isolation | F02-T13, T14, T15, **T29**; F03-T12, T20; F05-T06, T13, T37; **F06-T05, T07, T14 and F06-NC1** | **DONE** on every endpoint that exists - still to be re-proven on F08's admin routes |
+| Idempotency, including two simultaneous requests | F03-T21 to T28 | **DONE** |
+| Concurrent resolve | F05-T31 to T38, F05-NC1 | **DONE** |
+| Which decision wins | F04-T01 to T20 | **DONE** |
+| No N+1 under a list endpoint | F05 review shape, **F06-T20** | **DONE** - measured, not asserted |
 
 ## Section 8 - The eight decisions
 
@@ -128,9 +133,12 @@ Recorded so they are not mistaken for done.
 
 | Guarantee | Why it cannot be proven yet | Lands in |
 |---|---|---|
-| Tenant isolation on real business endpoints | Those endpoints do not exist; F02 proves the mechanism through a test-only controller | F03, F05, F08 |
-| Idempotency under concurrent retries | Needs the submission endpoint | F03 |
-| Frequency correctness under concurrency | Needs the policy engine and the advisory lock | F04 |
-| Exactly-one-winner review resolution | Needs the resolve endpoint | F05 |
-| That the real policy engine agrees with the seeded fixtures | The engine does not exist; the fixtures are hand-written | F04 |
+| ~~Tenant isolation on real business endpoints~~ | **Closed** - proven on submission (F03), reviews (F05) and the three read endpoints (F06-T05, T07, T14, F06-NC1) | ~~F03, F05~~, F08 |
+| ~~Idempotency under concurrent retries~~ | **Closed in F03** | - |
+| ~~Frequency correctness under concurrency~~ | **Closed in F04** | - |
+| ~~Exactly-one-winner review resolution~~ | **Closed in F05** | - |
+| ~~That the real policy engine agrees with the seeded fixtures~~ | **Closed in F04** | - |
+| Resolving a review from the dashboard | The UI is read-only; F06 shows the review outcome but cannot change it | F07 |
+| Cache invalidation after a resolution | Nothing mutates yet. The query keys are already prefixed for it | F07 |
 | API key rotation and its grace window end to end | Only the lifecycle semantics are enforced so far | F08 |
+| Admin access to a named company's data | `tenantScope()` refuses a principal with no tenant; admin routes take an explicit company id | F08 |

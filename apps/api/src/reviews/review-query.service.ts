@@ -1,7 +1,8 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import type { Prisma } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
-import { decodeCursor, encodeCursor, type ListReviewsDto } from './dto/list-reviews.dto';
+import { decodeCursor, encodeCursor } from '../common/keyset';
+import { type ListReviewsDto } from './dto/list-reviews.dto';
 import {
   toReviewDetail,
   toReviewSummary,
@@ -60,7 +61,7 @@ export class ReviewQueryService {
 
     return {
       items: page.map(toReviewSummary),
-      nextCursor: hasMore && last ? encodeCursor({ createdAt: last.createdAt, id: last.id }) : null,
+      nextCursor: hasMore && last ? encodeCursor({ timestamp: last.createdAt, id: last.id }) : null,
     };
   }
 
@@ -108,7 +109,7 @@ export class ReviewQueryService {
  * normal case, not an edge case.
  */
 function keysetBefore(cursor: string): Prisma.ReviewWhereInput {
-  const { createdAt, id } = decodeCursor(cursor);
+  const { timestamp: createdAt, id } = decodeCursor(cursor);
 
   return {
     OR: [{ createdAt: { lt: createdAt } }, { createdAt, id: { lt: id } }],

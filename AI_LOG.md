@@ -702,6 +702,102 @@ would have believed something false about their database.
   put invented figures on the dashboard, even though both make the screenshots
   look better.
 
+---
+
+## Defects found during F06
+
+### 32. A hundred-times money error, in my own mockup
+
+While building the F06 visual proposal I wrote the dashboard's total as
+**`SAR 296,500.00`**.
+
+296,500 is the sum of the seeded expenses **in minor units**. The correct
+figure is **`SAR 2,965.00`**.
+
+I had printed the raw halalas with a currency label in front of them. Every
+individual row on the same mockup was right - `SAR 200.00`, `SAR 1,250.00` -
+because I had converted those by hand and simply forgot to convert the total.
+
+**Why it matters more than a mockup typo:** it is exactly the failure the
+assessment warns about, it was off by two orders of magnitude, and **it looked
+entirely plausible**. Nothing about "SAR 296,500.00" reads as wrong on a
+dashboard. If that had shipped, the first person to notice would have been
+whoever reconciled the figure against their accounts.
+
+**Fix:** the number was corrected before the proposal was sent, and the defect
+became the argument for `lib/format.spec.ts` carrying a real boundary suite
+rather than one happy-path assertion - including the top of the int4 range and
+a zero-decimal currency.
+
+### 33. Three test assumptions that were simply false
+
+The first run of the F06 backend suite failed six times, and every failure was
+my assumption rather than the code's behaviour:
+
+| What I assumed | What is true |
+|---|---|
+| API keys are sent as `Authorization: Bearer` | They are sent as **`x-api-key`** (F02) |
+| The submit DTO field is `amountMinor` | It is **`amount`**, and `.strict()` rejected the body |
+| "Casino Royale" appears in both seeded companies | **Only Nile has it** |
+
+The third is the one worth recording. A tenant-scoping test that searches for a
+term only one company has would pass **with no tenant predicate at all** - the
+other company has nothing to leak. The test would have been green and would
+have proved nothing.
+
+**Fix:** the search is now for `beans`, which **both** companies have, and the
+test asserts the two result sets are disjoint. The comment in the file records
+why the first merchant was the wrong choice.
+
+I also tried to move a row out of a filtered set by updating `decision` alone,
+and PostgreSQL refused with `23514` - `expenses_decision_status_check` forbids
+`REJECT` with `APPROVED`. That was the constraint doing its job, not a
+problem; both columns now change together.
+
+### 34. A review that was opened after it was resolved
+
+Reading the real expense detail page in the browser, `exp-1005` showed:
+
+```
+Opened     Nov 20, 2026, 22:19
+Resolved   Nov 18, 2026, 13:30
+```
+
+Opened two days **after** it was resolved.
+
+The seed sets `resolvedAt` from a fixture but never set `createdAt`, so the
+column fell back to its `now()` default - **whenever the container last
+started**. Every restart moved it.
+
+**No test caught this**, and no test would have: the suites assert state,
+outcome and reviewer, and nothing in F01 through F05 ever displayed the two
+timestamps side by side. It took rendering them next to each other on a page.
+
+**Fix:** the seed stamps `createdAt` from the expense's `spentAt` - a review is
+opened when its expense is submitted - so the seeded data is now internally
+coherent whenever it is run.
+
+### 35. Two strings that were identical on screen and different in memory
+
+The money tests failed with:
+
+```
+Expected: "SAR 1,250.00"
+Received: "SAR 1,250.00"
+```
+
+`Intl.NumberFormat` separates a currency code from its amount with a
+**non-breaking space** (U+00A0), so that "SAR" can never wrap away from its
+figure.
+
+**The tempting fix was the wrong one.** Replacing it with an ordinary space in
+`formatMoney` would have made the tests pass and made the typography worse -
+`SAR` could then wrap to the end of a line with its number on the next.
+
+**Fix:** the tests build their expected strings through a helper that inserts
+U+00A0, and one test asserts the non-breaking space **is** present - so the
+decision is on the record rather than being an accident nobody noticed.
+
 ## Running record
 
 | Date | Phase | Notes |
@@ -720,4 +816,6 @@ would have believed something false about their database.
 | 2026-11-20 | F04 design review | Ten-point proposal agreed before any code. The F03 port turned out to need no change at all, which was the clearest evidence the boundary had been drawn in the right place. The project owner added six requirements; two of them - the post-count synchronisation and EXPLAIN ANALYZE over an index claim - corrected real weaknesses in the plan rather than refining it |
 | 2026-11-20 | F04 implementation | Three pure rules, a thin evaluator, the advisory lock as an injectable seam, and the production endpoint activated. Five defects found and fixed. 63 new tests, 305/305 passing, every F03 DEFERRED row closed |
 | 2026-11-20 | F05 design review | Twelve-point proposal agreed before any code. The existing schema turned out to need no migration - the composite foreign key from F01 already guarantees a review's tenant matches its expense's. The project owner added six requirements; three changed the implementation rather than refining it: a composite keyset cursor, `clock_timestamp()` over `now()`, and measuring Prisma's query shape instead of claiming it |
-| 2026-11-20 | F05 implementation | Review listing, details and resolution; a single conditional UPDATE with the tenant and concurrency guards in one WHERE; review and expense in one transaction. Three defects found and fixed. 66 new tests, 371/371 passing, R-04 mitigated with measured evidence |
+| 2026-11-20 | F05 implementation | Review listing, details and resolution; a single conditional UPDATE with the tenant and concurrency guards in one WHERE; review and expense in one transaction. Three defects found and fixed. 66 new tests, 372/372 passing, R-04 mitigated with measured evidence |
+| 2026-11-20 | F06 design review | A twelve-point proposal with a working HTML mockup built from the real design tokens and the real seeded rows, rather than a list of component names. The project owner approved all ten decisions and added two requirements: small, smooth open/close transitions rather than none, and a walkthrough session after delivery. Verifying the stated baseline found it was **372 tests, not 371** |
+| 2026-11-20 | F06 implementation | Three tenant-scoped read endpoints, a single-statement aggregate, a shared keyset cursor, and three pages split between Server and Client Components on a stated rule. Four defects found and fixed - one of them a hundred-times money error in my own mockup. 67 new tests (45 backend, 22 frontend), 417/417 API tests passing, 23 browser checks at six viewport widths |

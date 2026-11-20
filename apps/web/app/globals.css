@@ -100,6 +100,82 @@
 }
 
 /*
+ * Motion.
+ *
+ * Three keyframes, all of them for a thing that OPENS or CLOSES - a drawer, a
+ * menu, a row of results replacing another. Nothing here animates to decorate:
+ * there is no entrance animation on page load, no staggered list, no number
+ * counting up. Those make an interface feel slower the second time you use it.
+ *
+ * The durations are 150ms for a fade and 200ms for anything that also moves.
+ * Below roughly 100ms a transition reads as a flicker; above roughly 250ms the
+ * interface feels like it is waiting for itself.
+ *
+ * Every one of them is cancelled by the reduced-motion block below.
+ */
+@layer utilities {
+  @keyframes limaz-fade-in {
+    from {
+      opacity: 0;
+    }
+  }
+
+  @keyframes limaz-fade-out {
+    to {
+      opacity: 0;
+    }
+  }
+
+  @keyframes limaz-slide-in-left {
+    from {
+      transform: translateX(-100%);
+    }
+  }
+
+  @keyframes limaz-slide-out-left {
+    to {
+      transform: translateX(-100%);
+    }
+  }
+
+  @keyframes limaz-pop-in {
+    from {
+      opacity: 0;
+      transform: translateY(-4px) scale(0.98);
+    }
+  }
+
+  /* Radix sets data-state on the element while it enters and leaves, which is
+     what makes an EXIT animation possible at all - React would otherwise
+     unmount the node before anything could play. */
+  .anim-overlay[data-state='open'] {
+    animation: limaz-fade-in 150ms ease-out;
+  }
+
+  .anim-overlay[data-state='closed'] {
+    animation: limaz-fade-out 150ms ease-in;
+  }
+
+  .anim-drawer[data-state='open'] {
+    animation: limaz-slide-in-left 200ms cubic-bezier(0.32, 0.72, 0, 1);
+  }
+
+  .anim-drawer[data-state='closed'] {
+    animation: limaz-slide-out-left 200ms cubic-bezier(0.32, 0.72, 0, 1);
+  }
+
+  .anim-pop[data-state='open'] {
+    animation: limaz-pop-in 150ms ease-out;
+  }
+
+  /* For content that is swapped rather than toggled - a new page of results
+     replacing the previous one. */
+  .anim-enter {
+    animation: limaz-fade-in 150ms ease-out;
+  }
+}
+
+/*
  * Motion is opt-out by default for anyone who has asked their system for less
  * of it. Transitions here are 150-200ms and carry meaning (state change,
  * drawer position); nothing animates for decoration.

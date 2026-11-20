@@ -1,5 +1,6 @@
 import { Module, type DynamicModule, type Provider } from '@nestjs/common';
 import { PrismaModule } from '../prisma/prisma.module';
+import { ExpenseQueryService } from './expense-query.service';
 import { ExpenseSubmissionService } from './expense-submission.service';
 import { AdvisoryFrequencyLock, FREQUENCY_LOCK } from './frequency-lock';
 import { ExpensesController } from './expenses.controller';
@@ -40,6 +41,12 @@ export class ExpensesModule {
       controllers: [ExpensesController],
       providers: [
         ExpenseSubmissionService,
+        // F06's manager read routes. They live on the same controller, so
+        // they inherit the rule above: there is no way to publish
+        // GET /v1/expenses without also naming a policy evaluator. That is
+        // the right coupling - a read endpoint over rows that were never
+        // evaluated would show decisions nothing produced.
+        ExpenseQueryService,
         { provide: POLICY_EVALUATOR, ...evaluator } as Provider,
         // Always the real advisory lock. Declared here rather than inlined in
         // the service so a test can substitute it through `overrideProvider`,
@@ -49,7 +56,7 @@ export class ExpensesModule {
         AdvisoryFrequencyLock,
         { provide: FREQUENCY_LOCK, useExisting: AdvisoryFrequencyLock },
       ],
-      exports: [ExpenseSubmissionService],
+      exports: [ExpenseSubmissionService, ExpenseQueryService],
     };
   }
 }

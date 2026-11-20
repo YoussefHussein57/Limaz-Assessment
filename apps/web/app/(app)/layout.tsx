@@ -1,6 +1,7 @@
 import { AppShell } from '@/components/layout/app-shell';
 import { requireUser } from '@/lib/auth';
 import { AuthProvider } from '@/providers/auth-provider';
+import { QueryProvider } from '@/providers/query-provider';
 
 /**
  * The authenticated shell, and the gate in front of it.
@@ -24,7 +25,23 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <AuthProvider user={user}>
-      <AppShell>{children}</AppShell>
+      {/*
+        `key={user.id}` is the session-scoped cache guarantee, and it is
+        structural rather than procedural.
+
+        A different user unmounts this provider and mounts a new one, so a
+        brand-new QueryClient is constructed and there is NO cache to read
+        from. The alternative - calling `queryClient.clear()` on logout - works
+        only as long as every exit path remembers to call it, and the paths
+        include session expiry and a browser back-navigation after logout.
+
+        `requireUser()` above has already resolved the identity on the server,
+        so this key is the server's answer to who is signed in, not the
+        browser's.
+      */}
+      <QueryProvider key={user.id}>
+        <AppShell>{children}</AppShell>
+      </QueryProvider>
     </AuthProvider>
   );
 }

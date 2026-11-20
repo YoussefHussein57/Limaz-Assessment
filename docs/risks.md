@@ -427,6 +427,37 @@ evidence that supports its status. Where a mitigation is partial, the status is
 | **Automated verification** | None, and that is the risk |
 | **Manual verification** | Review any future retention or admin tooling against this entry |
 | **Status** | `ACCEPTED` - stated rather than implied |
+
+### R-28 - Keyset pagination has no backward cursor
+
+| | |
+|---|---|
+| **Component** | `apps/web/components/expenses/expense-list.tsx` |
+| **Description** | A keyset cursor is a position in **one** direction, and the API returns only a forward one. The cursors already visited are therefore kept in component state and "Newer" pops that stack. A link **pasted** with a `cursor` in it starts with an empty stack, so "Newer" from that page returns to the **first** page rather than the one before it |
+| **Likelihood** | Low - it needs somebody to share a deep page rather than page there themselves |
+| **Impact** | Low - the reader lands somewhere defined and can page forward again. Nothing is lost or shown incorrectly |
+| **Severity** | **Low** |
+| **Mitigation** | `?? null` on the empty pop, so the fallback is the first page rather than `undefined` being sent as a cursor. Documented in the feature document and in the code |
+| **Residual hole** | Encoding the whole trail in the URL would fix it and would make every shared link unwieldy. A backward cursor on the API would fix it properly and is the real upgrade path |
+| **Automated verification** | None - the forward path is covered by F06-T19 and T19b |
+| **Manual verification** | Step 10 of the F06 manual cycle |
+| **Status** | `ACCEPTED` - the cost of the fix exceeds the cost of the case |
+
+### R-29 - The category filter offers only what the current page contains
+
+| | |
+|---|---|
+| **Component** | `apps/web/components/expenses/expense-list.tsx` |
+| **Description** | The category dropdown is derived from the categories present in the **page being displayed**, plus whatever is already selected. A company whose rarer categories only appear on page three cannot select one from page one |
+| **Likelihood** | Medium once a company has more than one page of expenses |
+| **Impact** | Low - the filter still works when set from the URL, and search covers the same ground by merchant or reference |
+| **Severity** | **Low** |
+| **Mitigation** | The selected value is always added to the list, so a category chosen from a shared link never disappears from the control. Stated as an omission in `docs/features/F06-manager-dashboard.md` rather than presented as complete |
+| **Residual hole** | The correct fix is a distinct-categories endpoint. Not built: a second request on every page load to populate a convenience control was not judged worth it at this size |
+| **Automated verification** | None |
+| **Manual verification** | Step 5 of the F06 manual cycle |
+| **Status** | `ACCEPTED` - with the upgrade path named |
+
 ## Summary
 
 | Severity | Open | In progress | Mitigated | Accepted |
@@ -434,7 +465,7 @@ evidence that supports its status. Where a mitigation is partial, the status is
 | Critical | - | - | R-01, R-02, R-03, R-05, R-10, R-21 | R-20 |
 | High | R-06, R-15 | - | R-04, R-07, R-08, R-12, R-14 | R-18, R-24, R-26 |
 | Medium | R-13 | - | R-16 | R-11, R-17, R-19, R-22, R-23, R-25, R-27 |
-| Low | - | - | - | R-09 |
+| Low | - | - | - | R-09, R-28, R-29 |
 
 ## Review log
 
@@ -451,3 +482,4 @@ evidence that supports its status. Where a mitigation is partial, the status is
 | 2026-11-20 | F03 completed | R-25, R-26 and R-27 added and accepted. R-03 moved to `MITIGATED` with named F03 evidence; R-02 and R-10 keep explicit re-verification requirements for F04 |
 | 2026-11-20 | F04 completed | R-02 moved to `MITIGATED` with measured evidence (F04-T26 and the F04-NC1 negative control). R-10 moved to `MITIGATED`: both concurrency features now ship a control that fails when the mechanism is removed. **R-11 stays ACCEPTED** - the advisory lock does not address out-of-order evaluation and is not claimed to. R-26 re-checked: the canonicalisation contract is unchanged, `normaliseCategory` being an extraction guarded by the pinned string test |
 | 2026-11-20 | F05 completed | R-04 moved to `MITIGATED` with measured evidence (F05-T31, T33, T44 and the F05-NC1 negative control, with lock contention confirmed through `pg_blocking_pids()`). R-11 re-checked and left `ACCEPTED` - nothing in F05 touches out-of-order evaluation. R-27 re-checked: review resolution performs no deletes, and `Review -> Expense` is `onDelete: Restrict`, so a resolved review makes its expense harder to delete rather than easier |
+| 2026-11-20 | F06 completed | R-28 and R-29 added and accepted, both naming their upgrade path. R-01 re-verified on three new read endpoints with a negative control (F06-NC1) that fails when the tenant predicate is removed. R-23 re-checked and left **ACCEPTED**: no DOM test runner was added, so frontend interaction scenarios remain browser-verified and are marked as such rather than as PASS. R-25 gained direct evidence - `formatMoney` is unit-tested at the top of the int4 range. R-24 re-checked: the new pages still enforce nothing, and every refusal is the API's (F06-T07 to T10) |

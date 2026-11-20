@@ -30,11 +30,28 @@ export function SidebarNav({
 }) {
   const pathname = usePathname();
 
+  /*
+   * Which link is "the page you are on".
+   *
+   * An exact match alone is wrong: on /dashboard/expenses/<id> nothing would
+   * be highlighted, so a reader three clicks deep loses their orientation.
+   * A plain prefix match is also wrong: /dashboard is a prefix of
+   * /dashboard/expenses, so Overview would light up on every page.
+   *
+   * The LONGEST matching prefix is the answer, which is the same rule routers
+   * use to pick a route. It is computed once for the whole list rather than
+   * per item, so exactly one link can ever be marked.
+   */
+  const current = items
+    .filter((item) => !item.comingIn)
+    .filter((item) => pathname === item.href || pathname.startsWith(`${item.href}/`))
+    .sort((a, b) => b.href.length - a.href.length)[0]?.href;
+
   return (
     <nav aria-label="Main">
       <ul className="flex flex-col gap-1">
         {items.map((item) => {
-          const active = pathname === item.href;
+          const active = current === item.href;
 
           if (item.comingIn) {
             return (
