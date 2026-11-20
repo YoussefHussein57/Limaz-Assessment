@@ -13,12 +13,15 @@ identifier belonging to another company.
 
 ## Current state
 
-> **F00, F01 and F02 are complete.** One
+> **F00, F01, F02 and F02.1 are complete.** One
 > `docker compose up` starts the stack, applies migrations and seeds two
 > companies. Both caller types authenticate: company backends with an API key,
 > managers and the platform admin with a database-backed session. Tenant
-> isolation is enforced and tested. **No business endpoints exist yet** -
-> expense submission, policy evaluation and reviews are F03 to F05.
+> isolation is enforced and tested. A person can now sign in at
+> <http://localhost:3000>, see their own company and sign out again.
+> **No business endpoints exist yet** - expense submission, policy evaluation
+> and reviews are F03 to F05, and the workspace says so on screen rather than
+> filling itself with invented figures.
 >
 > This is an incremental build. Each feature is implemented, tested and
 > reviewed before the next one begins. The table below is the honest status.
@@ -28,6 +31,7 @@ identifier belonging to another company.
 | **F00** | Monorepo, Docker, health check, config validation, tooling | **Done** - 17/17 acceptance checks |
 | **F01** | Database schema, migrations, seed data | **Done** - 11/11 acceptance checks |
 | **F02** | API key auth, manager and admin sessions, tenant isolation | **Done** - 16/16 acceptance checks, 62 new tests |
+| **F02.1** | Design tokens, component primitives, app shell, login and logout | **Done** - 18/18 scripted checks, 5 browser-verified |
 | F03 | Expense submission and idempotency | Not started |
 | F04 | Policy rules, decision precedence, frequency concurrency | Not started |
 | F05 | Review lifecycle and concurrent resolution | Not started |
@@ -86,6 +90,11 @@ not answering.
 The seed prints these at startup. They are published here on purpose so a
 reviewer can run the stack, and they are used nowhere else. Only hashes reach
 the database - bcrypt for passwords, SHA-256 for API keys.
+
+**They are deliberately not shown on the sign-in page.** The assessment
+forbids exposing seeded credentials in the production-facing interface, and a
+login form that fills itself in is a convenience that ships. Sign in at
+<http://localhost:3000> with a pair from this table.
 
 | Role | Email | Password |
 |---|---|---|
@@ -180,10 +189,29 @@ bash scripts/verify-f01.sh
 bash scripts/verify-f02.sh
 ```
 
+```bash
+bash scripts/verify-f02-1.sh
+```
+
 Each prints a PASS/FAIL line per test id, matching
-[`docs/testing/F00-test-matrix.md`](docs/testing/F00-test-matrix.md) and
-[`docs/testing/F01-test-matrix.md`](docs/testing/F01-test-matrix.md) and
-[`docs/testing/F02-test-matrix.md`](docs/testing/F02-test-matrix.md).
+[`docs/testing/F00-test-matrix.md`](docs/testing/F00-test-matrix.md),
+[`docs/testing/F01-test-matrix.md`](docs/testing/F01-test-matrix.md),
+[`docs/testing/F02-test-matrix.md`](docs/testing/F02-test-matrix.md) and
+[`docs/testing/F02.1-test-matrix.md`](docs/testing/F02.1-test-matrix.md).
+
+Five F02.1 checks are interaction behaviour - focus trap, focus return,
+double-submit, inline validation, layout at six widths. They are verified in a
+real browser and recorded **with the values measured**, not as ticks. Nothing
+re-runs them automatically; that is risk R-23.
+
+Design-token contrast is measured rather than asserted:
+
+```bash
+node scripts/check-contrast.mjs
+```
+
+It prints the ratio of all 15 pairs and exits non-zero on a failure. Four
+tokens were changed because of what it printed.
 
 Static gates:
 

@@ -10,6 +10,7 @@ The questions are written to attack **our actual choices**, not textbook theory.
 | [F00 - Foundation](F00-foundation.md) | 5 | Not yet |
 | [F01 - Database and seed](F01-database-and-seed.md) | 5 | Not yet |
 | [F02 - Authentication](F02-authentication.md) | 5 | Not yet |
+| [F02.1 - UI foundation](F02.1-ui-foundation.md) | 5 | Not yet |
 
 ## Learning gaps
 
@@ -23,3 +24,8 @@ them.
 | 2026-11-19 | Docker context semantics | A `.dockerignore` pattern without `**/` matches only at the context root | Noted, fixed and guarded by F00-T12 |
 | 2026-11-20 | Composite foreign keys | PostgreSQL needs a `UNIQUE` on exactly the referenced columns before they can be a foreign-key target - even when one of them is already the primary key | Noted, used in ADR-011 |
 | 2026-11-20 | Prisma error translation | Prisma collapses every non-unique, non-FK database error into `P2039`. The real SQLSTATE and constraint name survive under `meta.driverAdapterError.cause` | Noted, used by the test helper |
+| 2026-11-20 | React 19 types | `FormEvent` is deprecated with the note that it "doesn't actually exist". Deriving the type from `ComponentProps<'form'>['onSubmit']` cannot go stale when React changes it again | Noted, used in `login-form.tsx` |
+| 2026-11-20 | `'use client'` semantics | The directive marks a **boundary**, not "this file uses hooks". A boundary cannot receive a function prop, so marking one inside an already-client tree creates a constraint with no benefit | Noted, AI_LOG 15 |
+| 2026-11-20 | WCAG 1.4.11 | Non-text contrast requires 3:1 for the **visual boundary of a user interface component** - an input's edge - and does not apply to a decorative rule. One border colour cannot serve both | Noted, two border tokens |
+| 2026-11-20 | `offsetParent` | It is `null` for any `position: fixed` element, so it cannot be used to test visibility of a fixed sidebar. `getComputedStyle(el).display` can | Noted, AI_LOG 17 |
+| 2026-11-20 | RFC 3986 sub-delimiters | `,` and `;` are legal unencoded inside a URL password, so they cannot be treated as the end of the userinfo part | Noted, AI_LOG 14 |

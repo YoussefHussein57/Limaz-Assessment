@@ -285,6 +285,109 @@ here - F00 defect D-2 was the first, where a stale `tsbuildinfo` made a build
 exit 0 while emitting nothing. The lesson applied both times: assert on the
 artefact, not on the exit status.
 
+### 14. A redaction "fix" I accepted broke the thing it was fixing
+
+An automated review found that the credential redactor missed a password in a
+comma-separated list of connection strings. The proposed fix was to treat `,`
+and `;` as characters that end the userinfo part of a URL. It worked on the
+reported input, so I nearly took it.
+
+`,` and `;` are RFC 3986 **sub-delimiters** - legal, unencoded, inside a
+password. Adding them as terminators meant `postgresql://u:pa,ss@host/db`
+redacted `pa` and emitted `ss` in the log. The fix for a missed password
+created a leaked password.
+
+**How I noticed:** I ran the proposed version against a password containing a
+comma before accepting it, because the change touched the definition of where
+a credential ends, and that definition is the whole mechanism.
+
+**Fix:** stop guessing where the credential ends from punctuation, and bound
+each URL by where the **next scheme name** begins - collecting every `://`
+first, then walking backwards over the scheme characters. The terminator set
+now contains only characters RFC 3986 actually forbids in userinfo.
+
+**What I then wrote down rather than kept fixing:** two inputs this still
+misses - a raw `/` and a raw quote inside a password, both of which must be
+percent-encoded, and scanning past either mangles ordinary URLs and
+structured logs. They are documented as KNOWN LIMITS in the file itself, with
+a header stating that this is a **backstop, not a guarantee**. The protection
+that matters is structural: credentials are not put into log messages.
+
+A sixth review finding arrived afterwards. I measured it across 200 padding
+values, could not reproduce it, and did not change the code for it.
+
+### 15. `'use client'` on a component that did not need it broke the build
+
+I marked `sidebar-nav.tsx` as a client component out of habit - it uses
+`usePathname`. That made it a **server/client boundary**, and a boundary
+cannot receive a function prop, so the `onNavigate` callback the drawer passes
+it was rejected.
+
+The directive was unnecessary: the file is only ever imported by components
+that are already client components, so it is already on the client. Removing
+it fixed the build and removed a boundary that was never meant to exist.
+
+**The lesson:** `'use client'` is not "this code uses hooks". It marks where
+the boundary *is*, and marking one in the middle of a client tree creates a
+constraint with no benefit.
+
+### 16. A split that only showed up at build time
+
+`lib/auth.ts` imports `next/headers`, which exists only on the server. The
+login form imported a single pure function, `homePathFor`, from it - and that
+import pulls the whole module into the browser bundle. The build failed.
+
+Nothing in the editor flagged it; the type-check passed. The boundary is a
+bundler rule, not a type rule.
+
+**Fix:** split the module along the real line - `auth-shared.ts` for types and
+pure helpers, `auth.ts` for anything touching `cookies()`. The architecture
+document now states the rule in one line: *a client component imports from
+`auth-shared`, always.*
+
+### 17. My own browser check was wrong, and said the sidebar was hidden
+
+Verifying the responsive layout, I asserted the sidebar was visible with
+`offsetParent !== null`. It reported hidden at every width. The obvious
+conclusion was a broken breakpoint.
+
+`offsetParent` is `null` for **any** `position: fixed` element, which the
+sidebar is. The check was measuring the wrong property, not finding a bug.
+Re-measured with `getComputedStyle(el).display`, it is `flex` from 1024px
+upward.
+
+**The lesson is the one that keeps repeating here:** a failing check is a
+claim about the check as much as about the code. This one would have had me
+"fix" a layout that was already correct.
+
+### 18. A failing test that was right about the problem and wrong about the place
+
+The F02.1 acceptance run reported one failure: with the API stopped, the login
+page did not say *"Service unavailable"*. The page clearly contains that
+branch, so the first instinct was to call the check broken and relax it.
+
+The check was requesting `/login` **without a cookie**, and `getCurrentUser()`
+returns early in that case - no cookie, nothing to verify, no round trip. So
+nothing probed the API and nothing threw. That early return is correct;
+probing on every anonymous page view to detect a rare condition is a cost on
+the common path.
+
+But following it through found a real defect behind it. A visitor with no
+cookie only learns the API is down **on submit**, and there the proxy's `502`
+fell into the generic branch - *"Something went wrong signing you in. Please
+try again."* That is precisely the retry loop the code's own comment says it
+exists to prevent, and it reads like the password was wrong.
+
+**Fix in the product, not the assertion:** `502`, `503` and `504` now say the
+server could not be reached. The check was then split into the two visitors
+that actually exist - one holding a session (the page explains), one with no
+cookie (the form renders, and submitting returns a distinguishable `502`) -
+plus a third asserting the gateway error does not echo the internal address.
+
+**The lesson:** relaxing an assertion to make a suite green is how a real
+defect gets written down as a test bug. The honest move was to ask why the
+code and the check disagreed, and both had something to say.
+
 ## What I decided, not the AI
 
 - Holding NestJS at 11 rather than upgrading Node machine-wide or swapping the
@@ -306,6 +409,16 @@ artefact, not on the exit status.
   design stopping at three.
 - Keeping the seed's overwrite behaviour and gating it, instead of weakening
   what the seed does.
+- Stopping work on the credential redactor at a stated point, with the
+  declined findings reasoned in writing and the remaining gaps documented in
+  the file - rather than chasing review findings on a backstop while three
+  core guarantees were still unbuilt.
+- Taking two Radix primitives and writing the other seven components by hand,
+  on a criterion I can state: a dependency only where the accessible behaviour
+  is non-trivial.
+- Refusing to put the seeded credentials on the login page, and refusing to
+  put invented figures on the dashboard, even though both make the screenshots
+  look better.
 
 ## Running record
 
@@ -318,3 +431,5 @@ artefact, not on the exit status.
 | 2026-11-20 | F01 implementation | 8 tables, 7 enums, 5 hand-written CHECK constraints, idempotent seed. Four defects found and fixed. 11/11 acceptance checks, 53/53 tests |
 | 2026-11-20 | F02 design review | Seven comparisons, five diagrams, the API contract, and a security finding on the F01 seed. An eighth decision - the server-side Origin check - came out of a question from the project owner |
 | 2026-11-20 | F02 implementation | Three global guards, typed principal, four CSRF layers, credential redaction, the seed gate. Four defects found and fixed. 16/16 acceptance checks, 112/112 tests |
+| 2026-11-20 | F02.1 design review | Seven design and architecture decisions proposed and approved before any component was written, including the server-resolved identity model, the Radix criterion and the honest-placeholder rule |
+| 2026-11-20 | F02.1 implementation | Design tokens, 7 primitives, 2 Radix-backed components, app shell, login, logout, role gate, same-origin identity resolution. Five defects found and fixed. 18/18 scripted acceptance checks, 5 browser-verified, 15/15 contrast pairs |

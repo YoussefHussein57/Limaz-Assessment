@@ -59,8 +59,13 @@ however much code exists for it.
 
 | Requirement | Feature | Status |
 |---|---|---|
-| Manager dashboard: expenses, decisions, open reviews, policy editing | F06, F07 | **PENDING** |
-| Admin panel: companies, creation, API keys | F08 | **PENDING** |
+| A person can sign in and out of the web application | F02.1 | **DONE** - F02.1-T01, T02, T03, T08 |
+| Manager dashboard: expenses, decisions, open reviews, policy editing | F02.1 (shell), F06, F07 | **PARTIAL** - the shell, routing and identity are done; the content is F06 and F07 |
+| Admin panel: companies, creation, API keys | F02.1 (shell), F08 | **PARTIAL** - the shell and role gate are done; the content is F08 |
+| Responsive, usable on a small screen | F02.1 | **DONE** - no overflow measured at 360, 390, 768, 1024, 1440 and 1920; F02.1-T12 |
+| Accessible: contrast, focus, keyboard, labels | F02.1 | **DONE** - 15/15 contrast pairs measured; F02.1-T13, T14 |
+| Seeded credentials not exposed in the production-facing interface | F02.1 | **DONE** - F02.1-creds |
+| Clear loading and error states | F02.1 | **PARTIAL** - login, unreachable API and role denial are done; data-loading states arrive with data in F06 |
 | Every rule holds when the API is called directly | F02 | **DONE** - all F02 tests call the API, never a UI |
 
 ## Section 7 - Tests

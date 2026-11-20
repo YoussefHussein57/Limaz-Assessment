@@ -327,13 +327,59 @@ evidence that supports its status. Where a mitigation is partial, the status is
 | **Status** | `MITIGATED` |
 | **Source** | Automated security review of commit `c7a024b` |
 
+### R-22 - The credential redactor is a backstop with named gaps
+
+| | |
+|---|---|
+| **Component** | `apps/api/src/common/redact.ts` |
+| **Description** | The redactor rewrites credentials found in strings before they reach a log. It cannot be complete: a raw `/` or a raw quote inside a password is not redacted, because scanning past either mangles ordinary URLs and structured log lines. Both characters must be percent-encoded in a conforming URL |
+| **Likelihood** | Low - it requires a non-conforming connection string **and** that string reaching a log |
+| **Impact** | High - a credential in a log file |
+| **Severity** | **Medium** |
+| **Mitigation** | The real defence is structural: credentials are not placed into log messages in the first place, configuration errors name the variable rather than the value, and the seed refusal names no credential (F02-T21b). The redactor is the layer that catches a mistake, not the layer that prevents one. It also bounds its input at 8 KB, so a long line cannot turn redaction into a scan |
+| **Residual hole** | **The two input shapes above, stated as KNOWN LIMITS in the file's own header** so nobody reads the function as a guarantee |
+| **Why not keep fixing it** | Five rounds of review were applied, and the fifth proposed change **introduced a leak** - treating `,` and `;` as terminators broke passwords containing them, since both are RFC 3986 sub-delimiters (AI_LOG 14). A sixth finding could not be reproduced across 200 measured inputs. Continuing to adjust a backstop has a worse expected outcome than the structural work it displaces |
+| **Automated verification** | F02 redaction suite, including a password containing a comma |
+| **Manual verification** | Re-read the KNOWN LIMITS block before adding any new log statement that carries a connection string |
+| **Status** | `ACCEPTED` - with the limits documented in the code, not only here |
+
+### R-23 - The frontend's interaction behaviour has no automated test
+
+| | |
+|---|---|
+| **Component** | `apps/web` - drawer, menu, double-submit guard, inline validation, responsive layout |
+| **Description** | Eighteen F02.1 checks are scripted. Five are verified by hand in a real browser with their measurements recorded, and nothing re-runs them. A regression in focus return, scroll lock or the submit guard would ship silently |
+| **Likelihood** | Medium once F06 to F08 add more screens to the same shell |
+| **Impact** | Medium - an unusable drawer for keyboard and screen-reader users, or a duplicate submission |
+| **Severity** | **Medium** |
+| **Mitigation** | Each check is recorded in `docs/testing/F02.1-test-matrix.md` **with the values measured**, not as a tick, so it can be re-run by hand and compared. The two behaviours hardest to get right - focus trap and roving focus - are delegated to Radix rather than hand-rolled |
+| **Residual hole** | **No regression protection.** Playwright is the answer and was deferred deliberately: at this size it is ceremony, and it would be added for the review queue in F07 where a wrong click has a real consequence |
+| **Automated verification** | None, and that is the risk |
+| **Manual verification** | The five rows marked *browser* in the F02.1 test matrix |
+| **Status** | `ACCEPTED` - deferred with the trigger named |
+
+### R-24 - Route protection could be mistaken for security
+
+| | |
+|---|---|
+| **Component** | `apps/web/app/(app)/layout.tsx`, `admin/layout.tsx`, `lib/nav.ts` |
+| **Description** | The web application redirects unauthenticated visitors, hides admin navigation from managers and renders an access-denied page. None of it is enforcement. The danger is not the code - it is a future contributor concluding that putting a page under `(app)` is what protects it, and building an endpoint that trusts the browser |
+| **Likelihood** | Medium - this is the single most common misreading of this pattern |
+| **Impact** | **Catastrophic** if it leads to an endpoint that takes the tenant or the role from the client |
+| **Severity** | **High** |
+| **Mitigation** | Stated in three places a contributor will actually be in: the comment at the top of `lib/auth.ts`, the architecture document, and the "Adding a page" checklist, which says *take the tenant from the server, never from a query parameter*. The API enforces independently and F02 proves it with no browser involved (T13-T29) |
+| **Residual hole** | **Nothing mechanically prevents it.** The guard is the API's global `AuthorizationGuard`, which fails closed - a new route is protected until someone writes `@Public()` on it |
+| **Automated verification** | F02-T23 to T29 (the API refuses regardless of the client), F02.1-T07b (no admin navigation leaks) |
+| **Manual verification** | Review every new endpoint added in F03 onwards for `tenantScope()` |
+| **Status** | `ACCEPTED` - a documentation risk, carried deliberately |
+
 ## Summary
 
 | Severity | Open | In progress | Mitigated | Accepted |
 |---|---|---|---|---|
 | Critical | R-02 | R-03, R-10 | R-01, R-05, R-21 | R-20 |
-| High | R-04, R-06, R-15 | - | R-07, R-08, R-12, R-14 | R-18 |
-| Medium | R-13 | - | R-16 | R-11, R-17, R-19 |
+| High | R-04, R-06, R-15 | - | R-07, R-08, R-12, R-14 | R-18, R-24 |
+| Medium | R-13 | - | R-16 | R-11, R-17, R-19, R-22, R-23 |
 | Low | - | - | - | R-09 |
 
 ## Review log
@@ -347,3 +393,4 @@ evidence that supports its status. Where a mitigation is partial, the status is
 | 2026-11-20 | Automated security review of commit c7a024b | R-21 raised and mitigated: the seed could restore revoked credentials on any container restart |
 | 2026-11-20 | F02 completed | R-18, R-19 and R-20 added and accepted. R-01, R-07 and R-08 moved to MITIGATED with named F02 evidence; R-01 keeps an explicit re-verification requirement for F03, F05 and F08 |
 | 2026-11-20 | F01 completed | R-17 added and accepted. R-01 and R-03 moved to `IN PROGRESS` with named F01 evidence. R-05 re-verified now that migrations and a seed actually run. R-04 and R-08 gained supporting evidence |
+| 2026-11-20 | F02.1 completed | R-22, R-23 and R-24 added and accepted. R-22 records a stopping point on the credential redactor with its gaps stated in the code; R-24 names the risk that frontend route protection is misread as enforcement |

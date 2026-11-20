@@ -1,5 +1,116 @@
 @import 'tailwindcss';
 
-:root {
-  color-scheme: light dark;
+/*
+ * Design tokens.
+ *
+ * Every contrast ratio below was MEASURED, not assumed, by
+ * scripts/check-contrast.mjs. Four of the values originally proposed were
+ * changed because they sat within 0.1 of the WCAG AA threshold - a number that
+ * passes at 4.51 fails the moment a different tool rounds differently, so each
+ * token now carries real headroom.
+ *
+ * Nothing in a component should write a raw hex value. If a colour is needed
+ * that is not here, it belongs here first.
+ */
+@theme {
+  /* ---- surfaces ---- */
+  --color-bg: #f8fafc;
+  --color-surface: #ffffff;
+  --color-surface-subtle: #f1f5f9;
+
+  /* ---- text ---- */
+  --color-text: #0f172a; /* 17.06:1 on bg */
+  --color-text-secondary: #5a6a80; /*  5.27:1 on bg - was #64748B at 4.55 */
+  --color-text-inverse: #ffffff; /*  5.17:1 on accent */
+
+  /* ---- accent ---- */
+  --color-accent: #2563eb; /*  4.94:1 on bg, 5.17:1 on surface */
+  --color-accent-hover: #1d4ed8;
+  --color-accent-subtle: #eff6ff;
+
+  /*
+   * Two border tokens, not one.
+   *
+   * WCAG 1.4.11 requires 3:1 for the visual boundary of a UI COMPONENT - the
+   * edge that tells you where an input begins. It does not apply to decorative
+   * rules. #E2E8F0 measures 1.18:1, which is fine for a card edge and nowhere
+   * near enough for a form control.
+   */
+  --color-border: #e2e8f0; /* decorative: cards, dividers, table rules */
+  --color-border-input: #64748b; /*  4.55:1 on bg - well past the 3:1 floor */
+
+  /* ---- status: never colour alone, always paired with a label or icon ---- */
+  --color-success: #166534; /*  6.49:1 on its background - was #15803D at 4.57 */
+  --color-success-bg: #dcfce7;
+  --color-warning: #92400e; /*  6.37:1 - was #B45309 at 4.51 */
+  --color-warning-bg: #fef3c7;
+  --color-danger: #991b1b; /*  6.80:1 - was #B91C1C at 5.30 */
+  --color-danger-bg: #fee2e2;
+
+  /* ---- type ---- */
+  --font-sans:
+    var(--font-inter), ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto,
+    'Helvetica Neue', Arial, sans-serif;
+
+  /* ---- radii ---- */
+  --radius-control: 0.5rem;
+  --radius-card: 0.75rem;
+}
+
+@layer base {
+  * {
+    border-color: var(--color-border);
+  }
+
+  html {
+    /* The browser's own setting wins; never pin a px font-size on html. */
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background-color: var(--color-bg);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  /*
+   * One visible focus style for the whole application.
+   *
+   * `:focus-visible` rather than `:focus`, so a mouse click does not leave a
+   * ring behind while keyboard navigation still shows exactly where it is.
+   * Removing this breaks WCAG 2.4.7 and makes the app unusable without a
+   * mouse.
+   */
+  :focus-visible {
+    outline: 2px solid var(--color-accent);
+    outline-offset: 2px;
+    border-radius: 2px;
+  }
+
+  /*
+   * Financial figures line up only if the digits are the same width.
+   * Applied wherever an amount is rendered.
+   */
+  .tabular {
+    font-variant-numeric: tabular-nums;
+    font-feature-settings: 'tnum';
+  }
+}
+
+/*
+ * Motion is opt-out by default for anyone who has asked their system for less
+ * of it. Transitions here are 150-200ms and carry meaning (state change,
+ * drawer position); nothing animates for decoration.
+ */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
 }
