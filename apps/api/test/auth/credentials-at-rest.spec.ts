@@ -259,6 +259,30 @@ describe('F02 credentials at rest', () => {
       }
     });
 
+    it('redacts comma-separated urls that have NO path', () => {
+      // Without ',' as an authority terminator the first authority ran on into
+      // the second url, swallowed its scheme, and left its password intact.
+      // Verified before the fix: pw2 was emitted unredacted.
+      const output = redactText('postgresql://a:pw1@h1,postgresql://b:pw2@h2');
+
+      expect(output).not.toContain('pw1');
+      expect(output).not.toContain('pw2');
+      expect(output).toContain('h1');
+      expect(output).toContain('h2');
+    });
+
+    it('never emits a password prefix when the input has no whitespace at all', () => {
+      // The whitespace fallback cannot fire here, so the cut used to land
+      // inside the password. Nine padding lengths leaked before the fix.
+      for (let pad = 8_150; pad <= 8_200; pad += 1) {
+        const output = redactText(`${'x'.repeat(pad)}postgresql://u:SECRETVALUE@db/limaz`);
+
+        for (let length = 3; length <= 'SECRETVALUE'.length; length += 1) {
+          expect(output).not.toContain('SECRETVALUE'.slice(0, length));
+        }
+      }
+    });
+
     it('redacts EVERY url in one token, not just the first', () => {
       // A message listing two connection strings separated by a comma is a
       // single whitespace token.

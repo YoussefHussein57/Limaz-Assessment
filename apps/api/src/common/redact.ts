@@ -99,8 +99,32 @@ const LIMAZ_KEY = /\blmz_[a-z0-9]+_[A-Za-z0-9_-]{16,}\b/g;
 /** bcrypt modular crypt format. */
 const BCRYPT_HASH = /\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}/g;
 
-/** Characters that end a URL authority: path, query, fragment, or framing. */
-const AUTHORITY_TERMINATORS = new Set(['/', '?', '#', ' ', '\t', '\n', '\r', '"', "'", '<', '>']);
+/**
+ * Characters that end a URL authority: path, query, fragment, or framing.
+ *
+ * ',' and ';' are in the list because a message listing two connection
+ * strings separates them that way. Without them the first authority ran on
+ * into the second URL, which then swallowed its scheme and left its password
+ * unredacted - verified: `postgresql://a:pw1@h1,postgresql://b:pw2@h2` used to
+ * emit `pw2` intact.
+ */
+const AUTHORITY_TERMINATORS = new Set([
+  '/',
+  '?',
+  '#',
+  ',',
+  ';',
+  ' ',
+  '\t',
+  '\n',
+  '\r',
+  '"',
+  "'",
+  '<',
+  '>',
+  '|',
+  '\\',
+]);
 
 /**
  * Blanks the password in every URL in the string, in one linear pass.
@@ -164,12 +188,19 @@ function redactUrlCredentials(value: string): string {
 }
 
 /**
- * Bounds the input WITHOUT splitting a token.
+ * Bounds the input WITHOUT emitting a partial token.
  *
  * Cutting at an arbitrary index can land inside a connection string, leaving a
- * head like `postgresql://u:lea` that carries no '@' - so nothing redacts it
- * and part of the password is logged. Trimming back to the last whitespace
- * means only whole tokens are ever scanned or emitted.
+ * head like `postgresql://u:SECRE` that carries no '@' - so nothing redacts it
+ * and part of the password is logged anyway. Measured: with no whitespace in
+ * the input at all, nine different padding lengths leaked a prefix.
+ *
+ * Three steps, each a fallback for the one before:
+ *   1. Cut back to the last whitespace, so only whole tokens survive.
+ *   2. Failing that, cut back to the last token delimiter.
+ *   3. Failing that - one enormous unbroken token - drop the tail entirely if
+ *      it looks like it could carry a credential. A truncation marker tells
+ *      more than half a password does.
  */
 function bound(value: string): string {
   if (value.length <= MAX_SCANNED_LENGTH) {
@@ -177,10 +208,26 @@ function bound(value: string): string {
   }
 
   const slice = value.slice(0, MAX_SCANNED_LENGTH);
-  const lastBreak = slice.search(/\s\S*$/);
-  const safe = lastBreak > 0 ? slice.slice(0, lastBreak) : slice;
 
-  return `${safe} ...[truncated]`;
+  const lastWhitespace = slice.search(/\s\S*$/);
+  if (lastWhitespace > 0) {
+    return `${slice.slice(0, lastWhitespace)} ...[truncated]`;
+  }
+
+  const lastDelimiter = Math.max(
+    slice.lastIndexOf(','),
+    slice.lastIndexOf(';'),
+    slice.lastIndexOf('"'),
+    slice.lastIndexOf("'"),
+  );
+  if (lastDelimiter > 0) {
+    return `${slice.slice(0, lastDelimiter + 1)} ...[truncated]`;
+  }
+
+  // One unbroken token. A ':' anywhere in it means it could be `scheme://
+  // user:secret` or `key:value`, and we cannot tell where the value starts,
+  // so none of it is safe to emit.
+  return slice.includes(':') ? '[truncated]' : `${slice} ...[truncated]`;
 }
 
 /** Replaces anything that looks like a credential inside a free-text string. */
