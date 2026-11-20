@@ -148,6 +148,56 @@ describe('F02 credentials at rest', () => {
       expect(redactText(`compare failed: ${hash}`)).not.toContain(hash);
     });
 
+    it('redacts a password embedded in a connection string, keeping the host', () => {
+      // Prisma connection errors quote DATABASE_URL verbatim, and the global
+      // exception filter logs the stack of every 500. Without this the
+      // database password lands in the application log on the first
+      // connection failure.
+      const message =
+        'Authentication failed against database server, the URL ' +
+        'postgresql://limaz:limaz_dev_only_password@db:5432/limaz?schema=public is invalid';
+
+      const output = redactText(message);
+
+      expect(output).not.toContain('limaz_dev_only_password');
+      // The diagnosis survives: an error that no longer says which host
+      // failed has been redacted into uselessness.
+      expect(output).toContain('db:5432');
+      expect(output).toContain(REDACTED);
+    });
+
+    it('redacts credentials in other URL schemes too', () => {
+      for (const url of [
+        'postgres://user:s3cret@host/db',
+        'redis://default:topsecret@cache:6379',
+        'https://admin:letmein@internal.example/health',
+      ]) {
+        const output = redactText(`connection to ${url} failed`);
+        expect(output).not.toMatch(/s3cret|topsecret|letmein/);
+      }
+    });
+
+    it('redacts credential-bearing prefixes in free text', () => {
+      const samples = [
+        'Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.payload.signature',
+        'retrying with api_key=AKIAIOSFODNN7EXAMPLE',
+        'password: correct-horse-battery-staple',
+      ];
+
+      for (const sample of samples) {
+        expect(redactText(sample)).toContain(REDACTED);
+      }
+
+      expect(redactText(samples[0]!)).not.toContain('eyJhbGciOiJIUzI1NiJ9');
+      expect(redactText(samples[2]!)).not.toContain('correct-horse-battery-staple');
+    });
+
+    it('leaves an ordinary URL with no credentials alone', () => {
+      // A redactor that blanks harmless text is a redactor people switch off.
+      const url = 'https://api.example.com/v1/expenses?limit=50';
+      expect(redactText(`fetching ${url}`)).toContain(url);
+    });
+
     it('terminates on a cyclic object rather than hanging the logger', () => {
       const cyclic: Record<string, unknown> = { name: 'root' };
       cyclic.self = cyclic;

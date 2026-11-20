@@ -28,18 +28,44 @@ export const REDACTED = '[redacted]';
 
 /**
  * Patterns for secrets that travel as bare strings, where no key name gives
- * them away - a key pasted into a free-text log message, for example.
+ * them away - a credential pasted into a free-text log message, or embedded
+ * in an error a driver threw.
+ *
+ * Each entry carries its own replacement, because some of these must keep the
+ * surrounding context. A connection-string error is only useful if it still
+ * says WHICH host failed; blanking the whole match would redact the diagnosis
+ * along with the password.
  */
-const SECRET_PATTERNS: RegExp[] = [
+const SECRET_PATTERNS: ReadonlyArray<{ pattern: RegExp; replacement: string }> = [
+  // Credentials embedded in a URL: scheme://user:password@host
+  //
+  // This is the one that matters most here. Prisma connection errors quote
+  // the DATABASE_URL verbatim, password included, and this filter logs the
+  // stack of every 500. Without this pattern the database password would be
+  // written to the application log on the first connection failure - the same
+  // leak the health endpoint was hardened against in F00, arriving by the
+  // other door.
+  { pattern: /([a-z][a-z0-9+.-]*:\/\/[^:@\s/]+:)[^@\s]+@/gi, replacement: `$1${REDACTED}@` },
+
   // Our own API key format: lmz_<env>_<base64url>
-  /\blmz_[a-z0-9]+_[A-Za-z0-9_-]{16,}\b/g,
+  { pattern: /\blmz_[a-z0-9]+_[A-Za-z0-9_-]{16,}\b/g, replacement: REDACTED },
+
   // bcrypt modular crypt format
-  /\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}/g,
+  { pattern: /\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}/g, replacement: REDACTED },
+
+  // Credential-bearing prefixes in free text, however the value is shaped.
+  {
+    pattern: /\b(bearer|basic|token|api[_-]?key|password)[=:\s]+["']?[A-Za-z0-9._~+/-]{8,}={0,2}["']?/gi,
+    replacement: `$1 ${REDACTED}`,
+  },
 ];
 
 /** Replaces anything that looks like a credential inside a free-text string. */
 export function redactText(value: string): string {
-  return SECRET_PATTERNS.reduce((text, pattern) => text.replace(pattern, REDACTED), value);
+  return SECRET_PATTERNS.reduce(
+    (text, { pattern, replacement }) => text.replace(pattern, replacement),
+    value,
+  );
 }
 
 /**
