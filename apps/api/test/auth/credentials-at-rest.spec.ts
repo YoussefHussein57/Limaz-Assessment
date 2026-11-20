@@ -259,6 +259,58 @@ describe('F02 credentials at rest', () => {
       }
     });
 
+    it('redacts a password containing characters that are legal in userinfo', () => {
+      // ',' and ';' are sub-delims, so RFC 3986 allows them in a password.
+      // Treating them as authority terminators - which an earlier revision did
+      // while fixing comma-separated lists - cut the authority short and left
+      // the password untouched. This is the regression that fix introduced.
+      const cases: Array<[string, string]> = [
+        ['postgresql://u:pa,ss@host/db', 'pa,ss'],
+        ['postgresql://u:pa;ss@host/db', 'pa;ss'],
+        ['redis://:a,b,c@cache:6379', 'a,b,c'],
+        // Sub-delims, minus the quotes. Those are a documented limit, because
+        // a quote also closes a string in every structured log, and scanning
+        // past it would mangle the line instead.
+        ['postgresql://u:p!$&()*+,;=@host/db', 'p!$&()*+,;='],
+      ];
+
+      for (const [input, secret] of cases) {
+        const output = redactText(input);
+        expect(output).not.toContain(secret);
+        expect(output).toContain(REDACTED);
+      }
+    });
+
+    it('still splits a list of urls correctly, without that assumption', () => {
+      // Lists are handled by looking ahead to where the NEXT scheme begins,
+      // which needs no guess about what a password may contain.
+      const output = redactText(
+        'postgresql://a:pw,1@h1,postgresql://b:pw;2@h2;mysql://c:pw3@h3',
+      );
+
+      expect(output).not.toContain('pw,1');
+      expect(output).not.toContain('pw;2');
+      expect(output).not.toContain('pw3');
+      expect(output).toContain('h1');
+      expect(output).toContain('h2');
+      expect(output).toContain('h3');
+      // And the text is still readable rather than mangled.
+      expect(output).toContain('postgresql://a:');
+      expect(output).toContain('mysql://c:');
+    });
+
+    it('drops a url the truncation left half-written', () => {
+      // Cutting back to a ',' can land inside userinfo, leaving a head with no
+      // '@' that nothing recognises as a credential.
+      for (let pad = 8_150; pad <= 8_200; pad += 1) {
+        const output = redactText(`${'x,'.repeat(pad / 2)}postgresql://u:LEAKEDVALUE@db/x`);
+
+        for (let length = 3; length <= 'LEAKEDVALUE'.length; length += 1) {
+          expect(output).not.toContain('LEAKEDVALUE'.slice(0, length));
+        }
+      }
+    });
+
     it('redacts comma-separated urls that have NO path', () => {
       // Without ',' as an authority terminator the first authority ran on into
       // the second url, swallowed its scheme, and left its password intact.

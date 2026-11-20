@@ -27,6 +27,12 @@
  *    scanning past the path separator, which then mangles ordinary URLs like
  *    `https://cdn.example.com:8080/img@2x.png` - and a redactor that fills
  *    logs with noise is a redactor somebody switches off.
+ *  - A raw quote inside a URL password is not redacted either, for the same
+ *    shape of reason. A quote is technically a sub-delim and so legal, but it
+ *    is also what closes a string in every structured log. Scanning past it
+ *    turns `{"url":"https://host","email":"a@b.com"}` into a mangled line with
+ *    the address blanked, because the authority would run on to that '@'.
+ *    Keeping logs parseable wins; the password should be percent-encoded.
  *  - A secret with no key name, no recognisable prefix and no known format is
  *    indistinguishable from an identifier. Nothing here will catch it.
  *  - Input is truncated, so a credential past the limit is never scanned. The
@@ -100,20 +106,23 @@ const LIMAZ_KEY = /\blmz_[a-z0-9]+_[A-Za-z0-9_-]{16,}\b/g;
 const BCRYPT_HASH = /\$2[aby]\$\d{2}\$[./A-Za-z0-9]{53}/g;
 
 /**
- * Characters that end a URL authority: path, query, fragment, or framing.
+ * Characters that end a URL authority.
  *
- * ',' and ';' are in the list because a message listing two connection
- * strings separates them that way. Without them the first authority ran on
- * into the second URL, which then swallowed its scheme and left its password
- * unredacted - verified: `postgresql://a:pw1@h1,postgresql://b:pw2@h2` used to
- * emit `pw2` intact.
+ * ONLY characters that RFC 3986 forbids inside userinfo. ',' and ';' are
+ * deliberately absent: they are sub-delims, so they are legal in a password,
+ * and treating them as terminators cut the authority short and left the
+ * password unredacted. Measured: `postgresql://u:pa,ss@host/db` emitted
+ * `pa,ss` intact.
+ *
+ * That was a regression introduced while fixing a different case - lists of
+ * URLs separated by commas. Lists are handled by looking ahead to where the
+ * NEXT scheme begins instead, which needs no assumption about what a password
+ * may contain.
  */
 const AUTHORITY_TERMINATORS = new Set([
   '/',
   '?',
   '#',
-  ',',
-  ';',
   ' ',
   '\t',
   '\n',
@@ -124,7 +133,11 @@ const AUTHORITY_TERMINATORS = new Set([
   '>',
   '|',
   '\\',
+  '`',
 ]);
+
+/** Characters a URL scheme name may contain, per RFC 3986. */
+const SCHEME_CHARS = /[A-Za-z0-9+.-]/;
 
 /**
  * Blanks the password in every URL in the string, in one linear pass.
@@ -146,24 +159,44 @@ const AUTHORITY_TERMINATORS = new Set([
  * target failed has been redacted into uselessness.
  */
 function redactUrlCredentials(value: string): string {
-  if (!value.includes('://')) {
+  // Every '://' is located up front, so each URL is bounded by where the NEXT
+  // one starts rather than by guessing which punctuation ends this one. That
+  // is what lets a password legally contain ',' and ';' while a
+  // comma-separated list of connection strings still splits correctly.
+  const schemes: number[] = [];
+  for (let i = value.indexOf('://'); i !== -1; i = value.indexOf('://', i + 3)) {
+    schemes.push(i);
+  }
+
+  if (schemes.length === 0) {
     return value;
   }
 
   let output = '';
   let cursor = 0;
 
-  for (;;) {
-    const scheme = value.indexOf('://', cursor);
-    if (scheme === -1) {
-      output += value.slice(cursor);
-      return output;
+  for (let index = 0; index < schemes.length; index += 1) {
+    const scheme = schemes[index]!;
+    if (scheme < cursor) {
+      continue;
     }
 
     const authorityStart = scheme + 3;
 
+    // This URL cannot extend past the start of the next one's SCHEME NAME, so
+    // walk back from the next '://' over the characters a scheme may contain.
+    let limit = value.length;
+    const nextScheme = schemes[index + 1];
+    if (nextScheme !== undefined) {
+      let back = nextScheme;
+      while (back > authorityStart && SCHEME_CHARS.test(value[back - 1]!)) {
+        back -= 1;
+      }
+      limit = back;
+    }
+
     let authorityEnd = authorityStart;
-    while (authorityEnd < value.length && !AUTHORITY_TERMINATORS.has(value[authorityEnd]!)) {
+    while (authorityEnd < limit && !AUTHORITY_TERMINATORS.has(value[authorityEnd]!)) {
       authorityEnd += 1;
     }
 
@@ -185,6 +218,8 @@ function redactUrlCredentials(value: string): string {
 
     cursor = authorityEnd;
   }
+
+  return output + value.slice(cursor);
 }
 
 /**
@@ -221,13 +256,48 @@ function bound(value: string): string {
     slice.lastIndexOf("'"),
   );
   if (lastDelimiter > 0) {
-    return `${slice.slice(0, lastDelimiter + 1)} ...[truncated]`;
+    return `${dropUnterminatedUrl(slice.slice(0, lastDelimiter + 1))} ...[truncated]`;
   }
 
   // One unbroken token. A ':' anywhere in it means it could be `scheme://
   // user:secret` or `key:value`, and we cannot tell where the value starts,
   // so none of it is safe to emit.
   return slice.includes(':') ? '[truncated]' : `${slice} ...[truncated]`;
+}
+
+/**
+ * Removes a URL that the cut left half-written.
+ *
+ * `,` and `;` are legal inside a password, so cutting back to one can land in
+ * the middle of userinfo: `postgresql://u:pa,` carries no '@', so nothing
+ * recognises it as a credential and the fragment is logged. Any trailing
+ * `scheme://` that has not yet reached its '@' is dropped entirely.
+ */
+function dropUnterminatedUrl(kept: string): string {
+  const lastScheme = kept.lastIndexOf('://');
+  if (lastScheme === -1) {
+    return kept;
+  }
+
+  const tail = kept.slice(lastScheme + 3);
+
+  // Reached its '@' - the authority is complete and redaction will handle it.
+  if (tail.includes('@')) {
+    return kept;
+  }
+
+  // No ':' in the tail means no password can have started yet.
+  if (!tail.includes(':')) {
+    return kept;
+  }
+
+  // Walk back over the scheme name so the fragment goes with it.
+  let start = lastScheme;
+  while (start > 0 && SCHEME_CHARS.test(kept[start - 1]!)) {
+    start -= 1;
+  }
+
+  return kept.slice(0, start);
 }
 
 /** Replaces anything that looks like a credential inside a free-text string. */
