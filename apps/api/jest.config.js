@@ -11,8 +11,11 @@ module.exports = {
   ],
   moduleFileExtensions: ['js', 'json', 'ts'],
   setupFiles: ['<rootDir>/test/jest.setup.ts'],
-  // Creates and migrates the throwaway limaz_test database before any suite.
+  // Creates and migrates the throwaway limaz_test database before any suite,
+  // behind an advisory lock so two runs cannot drop it out from under each
+  // other (test/suite-lock.ts).
   globalSetup: '<rootDir>/test/global-setup.ts',
+  globalTeardown: '<rootDir>/test/global-teardown.ts',
   testTimeout: 30000,
 
   // Integration suites share one PostgreSQL database, and several of them

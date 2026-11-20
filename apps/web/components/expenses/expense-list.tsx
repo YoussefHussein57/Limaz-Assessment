@@ -9,7 +9,14 @@ import { EmptyState } from '@/components/ui/empty-state';
 import { Skeleton } from '@/components/ui/skeleton';
 import { useExpenseFilters } from '@/hooks/use-expense-filters';
 import { ApiError, userMessage } from '@/lib/api-error';
-import { expenseKeys, fetchExpensePage, hasActiveFilters, PAGE_SIZE } from '@/lib/queries';
+import {
+  dashboardKeys,
+  expenseKeys,
+  fetchExpenseCategories,
+  fetchExpensePage,
+  hasActiveFilters,
+  PAGE_SIZE,
+} from '@/lib/queries';
 import { pluralise } from '@/lib/format';
 import { ExpenseFiltersBar } from './expense-filters-bar';
 import { ExpenseRows } from './expense-rows';
@@ -101,23 +108,40 @@ export function ExpenseList() {
     });
   }, [setCursor]);
 
+  /**
+   * The company's WHOLE category vocabulary, from its own endpoint.
+   *
+   * F06 built this list from the page on screen. That looked harmless and was
+   * not: a company whose rarer categories only appear on page three could not
+   * select one from page one, and the control presented a partial list as the
+   * complete set - a filter that silently offers a subset is harder to notice
+   * than one that is missing (R-29).
+   *
+   * It is a separate query rather than part of the page response because the
+   * answer does not change when the reader filters or pages. One fetch, then
+   * ten minutes of cache.
+   */
+  const categoryQuery = useQuery({
+    queryKey: dashboardKeys.expenseCategories(),
+    queryFn: ({ signal }) => fetchExpenseCategories(signal),
+    staleTime: 10 * 60_000,
+  });
+
   const items = query.data?.items ?? [];
   const filtered = hasActiveFilters(filters);
 
-  // The categories offered in the filter come from the data actually seen, so
-  // the dropdown never offers a category this company has never used. It is
-  // derived from the CURRENT page, which is a deliberate trade: a dedicated
-  // endpoint for the full distinct set would be a second request on every
-  // load to populate a convenience.
   const categories = useMemo(() => {
-    const seen = new Set(items.map((item) => item.category));
+    const known = new Set(categoryQuery.data?.categories ?? []);
 
+    // A category chosen from a shared link stays selectable even if the server
+    // list has not arrived yet, or no longer contains it. Without this the
+    // control would silently reset the reader's filter.
     if (filters.category) {
-      seen.add(filters.category);
+      known.add(filters.category);
     }
 
-    return [...seen].sort();
-  }, [items, filters.category]);
+    return [...known].sort();
+  }, [categoryQuery.data, filters.category]);
 
   const canGoNewer = cursor !== null;
   const canGoOlder = Boolean(query.data?.nextCursor);
@@ -139,6 +163,7 @@ export function ExpenseList() {
         onChange={setFilters}
         onClear={clear}
         categories={categories}
+        categoriesTruncated={categoryQuery.data?.truncated ?? false}
       />
 
       <div className="overflow-hidden rounded-card border border-border bg-surface">
@@ -209,7 +234,10 @@ export function ExpenseList() {
         {items.length > 0 ? (
           <nav
             aria-label="Expense pages"
-            className="flex items-center gap-2 border-t border-border px-4 py-3"
+            // Stacked below `sm`: at 360px the count and two buttons on one
+            // row squeeze the labels into two lines each. The buttons keep
+            // their 44px touch target either way.
+            className="flex flex-col gap-3 border-t border-border px-4 py-3 sm:flex-row sm:items-center"
           >
             <p className="text-sm text-text-secondary">
               {pluralise(items.length, 'expense')} on page {trail.length + 1}
@@ -219,7 +247,17 @@ export function ExpenseList() {
                   precisely the inconsistency keyset pagination avoids. */}
             </p>
 
-            <div className="ml-auto flex gap-2">
+            <div className="flex gap-2 sm:ml-auto">
+              {/*
+                The label tells the truth about where the button goes.
+
+                A keyset cursor is a position in ONE direction, so "previous
+                page" only exists for pages this session actually walked - they
+                are in `trail`. Arriving on a pasted link with a cursor in it
+                means there is no previous page to return to, and the button
+                goes to the first page instead. Calling it "Newer" there would
+                be a small lie the reader only discovers by pressing it (R-28).
+              */}
               <Button
                 variant="secondary"
                 size="sm"
@@ -227,7 +265,7 @@ export function ExpenseList() {
                 disabled={!canGoNewer || query.isFetching}
               >
                 <ChevronLeft className="size-4" aria-hidden="true" />
-                Newer
+                {trail.length > 0 ? 'Newer' : 'First page'}
               </Button>
               <Button
                 variant="secondary"

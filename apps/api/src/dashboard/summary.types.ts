@@ -70,3 +70,16 @@ export interface DashboardSummary {
    */
   readonly generatedAt: string;
 }
+
+/**
+ * The categories a company has actually used, for the expense filter.
+ *
+ * `truncated` is part of the contract rather than an implementation detail:
+ * the whole point of this endpoint is that the UI must not present a partial
+ * list as the company's complete set (R-29). If the cap is ever reached, the
+ * interface has to say so.
+ */
+export interface CategoryList {
+  readonly categories: readonly string[];
+  readonly truncated: boolean;
+}

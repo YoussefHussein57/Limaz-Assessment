@@ -2,6 +2,7 @@ import { execFileSync } from 'node:child_process';
 import path from 'node:path';
 import { Client } from 'pg';
 import { TEST_DATABASE_NAME, adminDatabaseUrl, testDatabaseUrl } from './database-url';
+import { acquireSuiteLock } from './suite-lock';
 
 /**
  * Creates a throwaway test database and applies the migrations to it.
@@ -20,6 +21,11 @@ import { TEST_DATABASE_NAME, adminDatabaseUrl, testDatabaseUrl } from './databas
  * This only ever touches a database literally named `limaz_test`.
  */
 export default async function globalSetup(): Promise<void> {
+  // FIRST, before anything destructive. Two runs dropping and recreating this
+  // database at the same moment break each other, and the symptom points
+  // nowhere near the cause - see test/suite-lock.ts and AI_LOG 36.
+  await acquireSuiteLock();
+
   const admin = new Client({ connectionString: adminDatabaseUrl() });
   await admin.connect();
 

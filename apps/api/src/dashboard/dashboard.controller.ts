@@ -3,7 +3,7 @@ import { CurrentPrincipal, Roles } from '../auth/decorators';
 import type { Principal } from '../auth/principal.types';
 import { tenantScope } from '../common/tenant';
 import { DashboardSummaryService } from './dashboard-summary.service';
-import type { DashboardSummary } from './summary.types';
+import type { CategoryList, DashboardSummary } from './summary.types';
 
 /**
  * The manager dashboard's aggregate figures.
@@ -42,5 +42,20 @@ export class DashboardController {
     const { companyId } = tenantScope(principal);
 
     return this.summary.summarise(companyId);
+  }
+
+  /**
+   * Every category this company has used, for the expense filter.
+   *
+   * Here rather than at `GET /v1/expenses/categories` for the same reason
+   * `summary` is here: that path collides with `GET /v1/expenses/:expenseId`
+   * and would be resolved by declaration order, which breaks silently the day
+   * somebody reorders the methods.
+   */
+  @Get('expense-categories')
+  async getExpenseCategories(@CurrentPrincipal() principal: Principal): Promise<CategoryList> {
+    const { companyId } = tenantScope(principal);
+
+    return this.summary.listCategories(companyId);
   }
 }

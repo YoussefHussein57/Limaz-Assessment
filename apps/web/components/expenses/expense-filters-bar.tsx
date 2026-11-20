@@ -33,12 +33,19 @@ export function ExpenseFiltersBar({
   onChange,
   onClear,
   categories,
+  categoriesTruncated,
 }: {
   filters: ExpenseFilters;
   onChange: (patch: Partial<ExpenseFilters>) => void;
   onClear: () => void;
-  /** Categories seen in this company's data. Empty until the first page loads. */
+  /**
+   * Every category this company has used, from its own endpoint - NOT the
+   * ones visible on the current page. The difference matters: the page-derived
+   * version presented a partial list as the complete set (R-29).
+   */
   categories: readonly string[];
+  /** The server capped the list. Say so rather than implying completeness. */
+  categoriesTruncated: boolean;
 }) {
   const active = hasActiveFilters(filters);
 
@@ -96,6 +103,18 @@ export function ExpenseFiltersBar({
           </Button>
         ) : null}
       </div>
+
+      {/*
+        Only when it actually happened. A company with a normal expense
+        vocabulary never sees this line - and one that does gets told the list
+        is incomplete instead of being left to assume it is not.
+      */}
+      {categoriesTruncated ? (
+        <p className="text-xs text-text-secondary">
+          Only the first {categories.length} categories are listed. Search by merchant or
+          reference to reach an expense in a category that is not shown.
+        </p>
+      ) : null}
     </section>
   );
 }

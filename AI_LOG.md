@@ -798,6 +798,89 @@ figure.
 U+00A0, and one test asserts the non-breaking space **is** present - so the
 decision is on the record rather than being an accident nobody noticed.
 
+### 36. I broke my own verification, then nearly blamed the code
+
+`scripts/verify-f02.sh` reported `F02-jest suite failed`. Run on its own, the
+same command passed 32/32.
+
+The script runs `npm test` **inside it**, and I had started it while a separate
+`npm test` was already running. Jest's `globalSetup` does
+`DROP DATABASE ... WITH (FORCE)` then `CREATE DATABASE`: the second run
+deleted the first one's database out from under its workers.
+
+**The dangerous part is not the lost time.** For a few minutes I had a red
+check with no cause, on a feature I was about to commit - exactly the state in
+which somebody decides the check is flaky and moves on.
+
+**Fix:** `test/suite-lock.ts` takes a session-level PostgreSQL advisory lock
+before `globalSetup` touches anything. A second run now refuses to start,
+names the holding pid, and says why. Chosen over a lock file because
+PostgreSQL releases a session lock when the connection dies however it dies -
+there is no stale state to clean up. Proven by starting two runs and watching
+the second refuse. Safe ordering is written down in
+`docs/testing/verification-order.md`.
+
+### 37. A 200-character merchant pushed half the table off the screen
+
+F06-T45 was marked **PARTIAL**: the CSS was in place and the amount ceiling was
+unit-tested, but no long string had ever been put through the UI. I wrote that
+down as a limitation and moved on.
+
+Submitting one took about a minute. The result: the merchant column stretched
+to fit all 200 characters, pushed Amount, Spent, Decision and Status past the
+viewport, and produced a **page-level horizontal scrollbar**. The column a
+manager actually came for was off-screen behind a scrollbar they had no reason
+to look for - the precise failure the "no essential information silently
+hidden" requirement exists to prevent.
+
+**Fix:** the table is `table-fixed` with percentage column widths, so it is
+exactly as wide as its container whatever the data contains; every free-text
+cell truncates with its full value in `title` and on the detail page. The
+mobile card's flex children got `min-w-0`, which is the same bug in a
+different layout.
+
+**The lesson is about the PARTIAL, not the CSS.** "The code looks right and I
+did not run it" was wrong, and it was wrong in a minute of work.
+
+### 38. The error page a failure actually produced was Next's, not mine
+
+I built `dashboard/error.tsx` and `[expenseId]/error.tsx`, wrote careful
+copy, and marked F06-T35 **PARTIAL** because I had not injected a failure.
+
+Stopping the API container produced Next's bare **"This page couldn't load"**
+screen: no shell, no navigation, no way back, HTTP 500.
+
+An `error.tsx` catches errors from its segment's **page** and below. It does
+**not** catch its own `layout.tsx` - that is rendered by the parent, so a
+parent boundary has to catch it. `(app)/layout.tsx` calls `requireUser()`,
+which throws when the API is unreachable, and there was no boundary above it.
+
+So the distinction F02.1 built so carefully - "the backend is down" is not
+"you are signed out" - was correct in the code and **never reached a screen**.
+
+**Fix:** `app/error.tsx`, the root boundary, with a message that says the
+account is fine and offers two ways forward.
+
+### 39. And then the retry button did not retry
+
+With the new error page rendering, I restarted the API and pressed **Try
+again**. The error page stayed.
+
+`reset()` re-renders the boundary's subtree on the **client**, and every page
+behind it is a Server Component - the router still held the failed RSC payload,
+so the same failure was produced again. I then tried the usual remedy,
+`router.refresh()` before `reset()`. **Still nothing**, because the throw came
+from a layout: when a layout fails there is no rendered tree to refresh into.
+
+**Fix:** the button reloads the document. These pages are server rendered and
+all their state comes from one server render, so "try again" and "fetch this
+page again" are the same operation. Verified the whole way through this time:
+error page → API restored → press → full dashboard.
+
+**Two attempts were wrong before the third worked**, and each looked correct
+while being untested. That is the same shape as 37 and 38, three times in one
+session.
+
 ## Running record
 
 | Date | Phase | Notes |
@@ -819,3 +902,4 @@ decision is on the record rather than being an accident nobody noticed.
 | 2026-11-20 | F05 implementation | Review listing, details and resolution; a single conditional UPDATE with the tenant and concurrency guards in one WHERE; review and expense in one transaction. Three defects found and fixed. 66 new tests, 372/372 passing, R-04 mitigated with measured evidence |
 | 2026-11-20 | F06 design review | A twelve-point proposal with a working HTML mockup built from the real design tokens and the real seeded rows, rather than a list of component names. The project owner approved all ten decisions and added two requirements: small, smooth open/close transitions rather than none, and a walkthrough session after delivery. Verifying the stated baseline found it was **372 tests, not 371** |
 | 2026-11-20 | F06 implementation | Three tenant-scoped read endpoints, a single-statement aggregate, a shared keyset cursor, and three pages split between Server and Client Components on a stated rule. Four defects found and fixed - one of them a hundred-times money error in my own mockup. 67 new tests (45 backend, 22 frontend), 417/417 API tests passing, 23 browser checks at six viewport widths |
+| 2026-11-21 | F06 closure | The three PARTIAL rows executed rather than described. Every one of them failed: a long merchant broke the table layout, a real backend outage produced Next's default error screen instead of the designed one, and its retry button did not retry. Four defects found and fixed, R-29 given a real endpoint, R-28 given an honest label, and test-database isolation enforced by an advisory lock |

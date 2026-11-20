@@ -135,3 +135,10 @@ export function readPolicySnapshot(value: unknown): PolicySnapshot | null {
     ),
   };
 }
+
+/** Every category the company has used. See `truncated` before rendering it. */
+export interface CategoryList {
+  categories: string[];
+  /** True when the server capped the list. The UI must say so. */
+  truncated: boolean;
+}

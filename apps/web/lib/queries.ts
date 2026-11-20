@@ -1,5 +1,10 @@
 import { apiGet, queryString } from './api-client';
-import type { ExpenseDecision, ExpensePage, ExpenseStatus } from './expense-types';
+import type {
+  CategoryList,
+  ExpenseDecision,
+  ExpensePage,
+  ExpenseStatus,
+} from './expense-types';
 
 /**
  * Query keys and the functions that fill them.
@@ -61,6 +66,15 @@ export const expenseKeys = {
 export const dashboardKeys = {
   all: ['dashboard'] as const,
   summary: () => [...dashboardKeys.all, 'summary'] as const,
+  /**
+   * The company's category vocabulary.
+   *
+   * No filters in this key: the answer does not depend on what the reader is
+   * currently looking at. That is the whole point - the F06 version derived
+   * the options from the page on screen, which made a partial list look like
+   * the company's complete set (R-29).
+   */
+  expenseCategories: () => [...dashboardKeys.all, 'expense-categories'] as const,
 };
 
 /** The page size the listing requests. Bounded by the API at 100. */
@@ -91,4 +105,14 @@ export function hasActiveFilters(filters: ExpenseFilters): boolean {
     filters.decision !== 'ALL' ||
     filters.category !== ''
   );
+}
+
+/**
+ * The categories this company has actually used.
+ *
+ * Changes only when an expense introduces a category nobody used before, so
+ * it is cached far longer than a list of expenses.
+ */
+export async function fetchExpenseCategories(signal?: AbortSignal): Promise<CategoryList> {
+  return apiGet<CategoryList>('/v1/dashboard/expense-categories', signal);
 }

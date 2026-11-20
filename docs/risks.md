@@ -437,7 +437,7 @@ evidence that supports its status. Where a mitigation is partial, the status is
 | **Likelihood** | Low - it needs somebody to share a deep page rather than page there themselves |
 | **Impact** | Low - the reader lands somewhere defined and can page forward again. Nothing is lost or shown incorrectly |
 | **Severity** | **Low** |
-| **Mitigation** | `?? null` on the empty pop, so the fallback is the first page rather than `undefined` being sent as a cursor. Documented in the feature document and in the code |
+| **Mitigation** | `?? null` on the empty pop, so the fallback is the first page rather than `undefined` being sent as a cursor. **And the button says where it goes**: it reads "First page" rather than "Newer" whenever this session has no previous page recorded, so the reader is not told one thing and given another (F06 closure) |
 | **Residual hole** | Encoding the whole trail in the URL would fix it and would make every shared link unwieldy. A backward cursor on the API would fix it properly and is the real upgrade path |
 | **Automated verification** | None - the forward path is covered by F06-T19 and T19b |
 | **Manual verification** | Step 10 of the F06 manual cycle |
@@ -456,7 +456,24 @@ evidence that supports its status. Where a mitigation is partial, the status is
 | **Residual hole** | The correct fix is a distinct-categories endpoint. Not built: a second request on every page load to populate a convenience control was not judged worth it at this size |
 | **Automated verification** | None |
 | **Manual verification** | Step 5 of the F06 manual cycle |
-| **Status** | `ACCEPTED` - with the upgrade path named |
+| **Status** | **`MITIGATED`** - the upgrade path named here was built in the F06 closure pass |
+
+### R-30 - A high-severity advisory in the Prisma CLI's dependency tree
+
+| | |
+|---|---|
+| **Component** | `prisma` (devDependency) -> `@prisma/config` -> `effect` |
+| **Description** | `npm audit` reports three **high** findings. All three are one chain: `effect <= 3.22.0` has a ReDoS in `Schema.TemplateLiteral`'s compiled regex, and `@prisma/config` and `prisma` are flagged only for depending on it |
+| **Actual exposure** | `@prisma/config` is loaded by the Prisma **CLI**, to parse `prisma.config.ts`. The running server (`node apps/api/dist/main.js`) uses `@prisma/client` and `@prisma/adapter-pg`, which do **not** depend on it - verified with `npm ls @prisma/config`. The CLI is present in the runtime image because the entrypoint runs `prisma migrate deploy`, so the code is on disk at runtime but is executed **only at container start**, and its only input is a file in this repository |
+| **Is the vulnerable path reachable from a request?** | **No.** No HTTP route, no user input and no database value reaches `Schema.TemplateLiteral`. A ReDoS needs attacker-controlled input; this input is our own config file, unchanged between runs |
+| **Likelihood** | Very low |
+| **Impact** | Low in this architecture - at worst a slow container start, not a request-path denial of service |
+| **Severity** | **Low** (npm's "high" rates the library, not this usage) |
+| **Available fix** | npm offers exactly one: **downgrade `prisma` 7.10.1 -> 6.12.0**, a major version backwards. That would undo ADR-009's driver-adapter architecture, the Prisma 7 config file and the generated client. `npm audit fix --force` was **not** run |
+| **Decision** | Do not downgrade. Trading a working, documented data-access architecture for an audit count on an unreachable path is a worse engineering outcome than the finding itself |
+| **Automated verification** | None. `npm ls` establishes the path; nothing tests an unreachable branch |
+| **Manual verification** | Re-check when Prisma 7 ships a release carrying `effect > 3.22.0`, and upgrade then |
+| **Status** | `ACCEPTED` - with the exposure analysed rather than the count dismissed |
 
 ## Summary
 
@@ -465,7 +482,7 @@ evidence that supports its status. Where a mitigation is partial, the status is
 | Critical | - | - | R-01, R-02, R-03, R-05, R-10, R-21 | R-20 |
 | High | R-06, R-15 | - | R-04, R-07, R-08, R-12, R-14 | R-18, R-24, R-26 |
 | Medium | R-13 | - | R-16 | R-11, R-17, R-19, R-22, R-23, R-25, R-27 |
-| Low | - | - | - | R-09, R-28, R-29 |
+| Low | - | - | **R-29** | R-09, R-28, R-30 |
 
 ## Review log
 
@@ -483,3 +500,4 @@ evidence that supports its status. Where a mitigation is partial, the status is
 | 2026-11-20 | F04 completed | R-02 moved to `MITIGATED` with measured evidence (F04-T26 and the F04-NC1 negative control). R-10 moved to `MITIGATED`: both concurrency features now ship a control that fails when the mechanism is removed. **R-11 stays ACCEPTED** - the advisory lock does not address out-of-order evaluation and is not claimed to. R-26 re-checked: the canonicalisation contract is unchanged, `normaliseCategory` being an extraction guarded by the pinned string test |
 | 2026-11-20 | F05 completed | R-04 moved to `MITIGATED` with measured evidence (F05-T31, T33, T44 and the F05-NC1 negative control, with lock contention confirmed through `pg_blocking_pids()`). R-11 re-checked and left `ACCEPTED` - nothing in F05 touches out-of-order evaluation. R-27 re-checked: review resolution performs no deletes, and `Review -> Expense` is `onDelete: Restrict`, so a resolved review makes its expense harder to delete rather than easier |
 | 2026-11-20 | F06 completed | R-28 and R-29 added and accepted, both naming their upgrade path. R-01 re-verified on three new read endpoints with a negative control (F06-NC1) that fails when the tenant predicate is removed. R-23 re-checked and left **ACCEPTED**: no DOM test runner was added, so frontend interaction scenarios remain browser-verified and are marked as such rather than as PASS. R-25 gained direct evidence - `formatMoney` is unit-tested at the top of the int4 range. R-24 re-checked: the new pages still enforce nothing, and every refusal is the API's (F06-T07 to T10) |
+| 2026-11-21 | F06 closure | **R-29 moved to `MITIGATED`**: the category filter now reads the company's whole vocabulary from `GET /v1/dashboard/expense-categories`, bounded at 200 and flagging truncation, verified by F06-T51 to T55. R-28 stays `ACCEPTED` but the control no longer mislabels itself. **R-30 added and accepted** after analysing the dependency path rather than the audit count. R-23 re-checked and unchanged: the three remaining browser-only rows (T35, T45, T46) were executed and all three found real defects, which is evidence for the risk rather than against it |

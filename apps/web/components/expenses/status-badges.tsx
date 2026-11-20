@@ -54,8 +54,28 @@ const STATUS_TONE = {
  * reader's eye, and the one that should win is the current status - that is
  * the fact a manager acts on. The original decision is context.
  */
-export function DecisionBadge({ decision }: { decision: ExpenseDecision }) {
-  return <Badge tone="neutral">Policy: {DECISION_LABEL[decision]}</Badge>;
+export function DecisionBadge({
+  decision,
+  /**
+   * Whether to say "Policy:" in front of the word.
+   *
+   * ON by default, and OFF inside the table. In the table a column header
+   * already reads "Decision" directly above it, so the prefix repeats what
+   * the reader just read and costs horizontal space a long merchant name
+   * needs more (F06-T45). Everywhere else - the detail page header, the
+   * mobile card - there is no column header, and without the prefix two bare
+   * pills reading "Review" and "Approved" side by side look like a bug.
+   */
+  prefixed = true,
+}: {
+  decision: ExpenseDecision;
+  prefixed?: boolean;
+}) {
+  return (
+    <Badge tone="neutral">
+      {prefixed ? `Policy: ${DECISION_LABEL[decision]}` : DECISION_LABEL[decision]}
+    </Badge>
+  );
 }
 
 /** Where the expense stands now. The coloured one. */

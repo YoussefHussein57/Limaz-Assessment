@@ -12,6 +12,7 @@ import {
 import { seed } from '../../prisma/seed/run';
 import { PasswordService } from '../../src/auth/password.service';
 import { resetDatabase } from '../test-db';
+import { MAX_CATEGORIES } from '../../src/dashboard/dashboard-summary.service';
 import { asManager, createF06TestApp, login, TEST_APP_ORIGIN } from './f06-test-app';
 
 /**
@@ -238,5 +239,128 @@ describe('F06 dashboard summary', () => {
       .get('/v1/dashboard/summary')
       .set({ Cookie: nileCookie, origin: TEST_APP_ORIGIN })
       .expect(200);
+  });
+// --- F06-T51 to T55: the company's category vocabulary (R-29) -----------
+  it('F06-T51: returns every category this company has used, not one page of them', async () => {
+    const response = await request(app.getHttpServer())
+      .get('/v1/dashboard/expense-categories')
+      .set(asManager(nileCookie))
+      .expect(200);
+
+    const want = [
+      ...new Set(EXPENSES.filter((e) => e.companyId === COMPANY_A.id).map((e) => e.category)),
+    ].sort();
+
+    expect(response.body.categories).toEqual(want);
+    expect(response.body.truncated).toBe(false);
+  });
+
+  it("F06-T52: a category only another company uses is not offered", async () => {
+    const nile = await request(app.getHttpServer())
+      .get('/v1/dashboard/expense-categories')
+      .set(asManager(nileCookie))
+      .expect(200);
+
+    const delta = await request(app.getHttpServer())
+      .get('/v1/dashboard/expense-categories')
+      .set(asManager(deltaCookie))
+      .expect(200);
+
+    // ALCOHOL belongs to Delta's data only. If the tenant predicate were
+    // missing, it would appear in Nile's filter - which is exactly the kind
+    // of leak a convenience control makes easy to overlook.
+    expect(delta.body.categories).toContain('ALCOHOL');
+    expect(nile.body.categories).not.toContain('ALCOHOL');
+    expect(nile.body.categories).toContain('GAMBLING');
+  });
+
+  it('F06-T53: the list is bounded, and says so when it is cut', async () => {
+    const company = await prisma.company.create({
+      data: {
+        name: 'Many Categories Co',
+        currency: 'SAR',
+        policy: { create: { autoApproveLimitMinor: 50_000, blockedCategories: [] } },
+      },
+    });
+
+    const passwords = app.get(PasswordService);
+    const password = `Test-cats-${Math.random().toString(36).slice(2, 12)}`;
+
+    await prisma.user.create({
+      data: {
+        email: 'many-categories@test.invalid',
+        companyId: company.id,
+        role: 'MANAGER',
+        displayName: 'Category Manager',
+        passwordHash: await passwords.hash(password),
+      },
+    });
+
+    // One more than the cap, so truncation is genuinely exercised rather than
+    // assumed from a full page.
+    const overCap = MAX_CATEGORIES + 5;
+
+    await prisma.expense.createMany({
+      data: Array.from({ length: overCap }, (_, i) => ({
+        companyId: company.id,
+        externalId: `cat-${i}`,
+        employeeId: 'emp-cat',
+        amountMinor: 1_000,
+        currency: 'SAR',
+        merchant: 'Category Shop',
+        category: `CATEGORY-${String(i).padStart(4, '0')}`,
+        spentAt: new Date(Date.now() - i * 60_000),
+        decision: 'APPROVE' as const,
+        status: 'APPROVED' as const,
+        payloadHash: `cat-${i}`.padEnd(64, '0'),
+        policySnapshot: {},
+      })),
+    });
+
+    const cookie = await login(app, 'many-categories@test.invalid', password);
+
+    const response = await request(app.getHttpServer())
+      .get('/v1/dashboard/expense-categories')
+      .set(asManager(cookie))
+      .expect(200);
+
+    expect(response.body.categories).toHaveLength(MAX_CATEGORIES);
+    // The flag is the point. Without it the UI would present a cut list as
+    // the company's complete vocabulary - the R-29 defect, moved rather than
+    // fixed.
+    expect(response.body.truncated).toBe(true);
+
+    await prisma.expense.deleteMany({ where: { companyId: company.id } });
+  }, 60_000);
+
+  it('F06-T54: an API key and the platform admin are both refused', async () => {
+    const key = await request(app.getHttpServer())
+      .get('/v1/dashboard/expense-categories')
+      .set('x-api-key', nileKey)
+      .expect(403);
+
+    expect(key.body.error).toBe('caller_type_not_allowed');
+
+    const admin = await request(app.getHttpServer())
+      .get('/v1/dashboard/expense-categories')
+      .set(asManager(adminCookie))
+      .expect(403);
+
+    expect(admin.body.error).toBe('insufficient_role');
+
+    await request(app.getHttpServer()).get('/v1/dashboard/expense-categories').expect(401);
+  });
+
+  it('F06-T55: "expense-categories" is not parsed as a dashboard sub-resource', async () => {
+    // The route lives in this namespace precisely BECAUSE
+    // /v1/expenses/categories would collide with /v1/expenses/:expenseId and
+    // be resolved by declaration order. Asserted so the reasoning is checked
+    // rather than just written down.
+    const collision = await request(app.getHttpServer())
+      .get('/v1/expenses/categories')
+      .set(asManager(nileCookie))
+      .expect(400);
+
+    expect(collision.body.error).toBe('invalid_request');
   });
 });

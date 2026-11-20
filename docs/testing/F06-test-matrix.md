@@ -1,14 +1,20 @@
 # F06 - Test matrix
 
-**67 new automated tests** (45 backend e2e + 22 frontend unit) and **23 browser
+**72 new automated tests** (50 backend e2e + 22 frontend unit) and **26 browser
 checks** executed against the real Docker stack.
+
+> **Closure pass, 21 Nov 2026.** Three rows were originally recorded PARTIAL.
+> All three have now been **executed**, and all three **failed on first run** -
+> see AI_LOG 37, 38 and 39. The defects are fixed and the rows below are PASS
+> with named evidence. R-29 was also given a real endpoint and R-28 an honest
+> label.
 
 Totals after F06:
 
 | | Before | New | After |
 |---|---|---|---|
 | API suites | 26 | 4 | **30** |
-| API tests | 372 | 45 | **417** |
+| API tests | 372 | 50 | **422** |
 | Web suites | 0 | 2 | **2** |
 | Web tests | 0 | 22 | **22** |
 
@@ -67,6 +73,11 @@ Totals after F06:
 | F06-T21 | `POST /v1/expenses` still works | 201 for an API key, and the manager can immediately read it | **PASS** |
 | F06-T21b | Manager session submitting | Still 403 `caller_type_not_allowed` - adding GET routes did not widen POST | **PASS** |
 | F06-T21c | Forged session cookie on a GET | 401 | **PASS** |
+| F06-T51 | Category list | **Every** category the company has used, not one page of them | **PASS** |
+| F06-T52 | A category only the other company uses | Absent. Delta sees ALCOHOL, Nile does not | **PASS** |
+| F06-T53 | More categories than the cap | Exactly 200 returned and `truncated: true` - the UI then says the list is cut | **PASS** |
+| F06-T54 | API key, platform admin, unauthenticated | 403, 403, 401 | **PASS** |
+| F06-T55 | `GET /v1/expenses/categories` | 400 - proving the route had to live in the dashboard namespace | **PASS** |
 
 ### Negative control
 
@@ -142,7 +153,7 @@ the seeded managers. Screenshots in `docs/screenshots/`.
 | F06-T32 | Initial loading | **PASS (browser)** - skeletons at the real row height; **no artificial delay anywhere** | `loading.tsx`, observed on first paint |
 | F06-T33 | Empty company | **PASS (automated)** - F06-T02 returns zeros; the UI renders the "No expenses yet" state from them | `EmptyState` + F06-T02 |
 | F06-T34 | Empty filter results | **PASS (browser)** - a **different** message from an empty company, with a working "Clear filters" | `f06-empty-filtered-1920.png` |
-| F06-T35 | Request failure | **PARTIAL** - the error boundaries and the list's error branch are implemented and reachable; **a forced 500 was not injected in the browser**. Recorded as not run rather than claimed | `error.tsx`, `expense-list.tsx` |
+| F06-T35 | Request failure | **PASS (browser)** - the API container was **stopped**, the designed error page rendered (no blank screen, no internals, a digest reference), the API was restarted, and **Try again recovered the full dashboard**. Two defects found doing it: AI_LOG 38 and 39 | `f06-error-state-1440.png`, `f06-error-recovered-1440.png` |
 | F06-T36 | Session expiration | **PASS (browser)** - a forged cookie is refused with 401 (F06-T21c) and `requireUser()` redirects to `/login?reason=signin` (F02.1-T09) | F02.1 acceptance script |
 | F06-T37 | Logout, then the other company | **PASS (browser)** - signed out of Nile, signed in as Delta: **only Delta's 4 expenses**, Delta's name in the sidebar, no Nile row anywhere | `f06-second-company.png` |
 | F06-T38 | Rapidly changing search | **PASS (by construction + browser)** - the filters are part of the query key, so a response has no slot to land in once the filter moves on. Observed: 5 keystrokes, 1 request | `queries.ts`, network log |
@@ -163,8 +174,8 @@ be visible in the image itself**.
 | F06-T42 | 1024px | **PASS** - sidebar appears at `lg`; table with the Category and Spent columns hidden until `lg` | Observed |
 | F06-T43 | 1440px | **PASS** - four summary cards in one row, full table, two-column detail | `f06-overview-1440.png`, `f06-expenses-1440.png` |
 | F06-T44 | 1920px | **PASS** - content held at `max-w-6xl` and centred; no stretched table | `f06-empty-filtered-1920.png` |
-| F06-T45 | Long merchant names, large amounts | **PARTIAL** - amounts up to `SAR 21,474,836.47` are covered by F06-T29d and the cells are `whitespace-nowrap` with `tabular` digits; merchant truncates with `truncate` on mobile and wraps on the detail heading. **A 200-character merchant was not rendered in the browser** | Code + F06-T29d |
-| F06-T46 | Keyboard navigation | **PARTIAL** - skip link, `:focus-visible` ring, native `<select>`, Radix drawer focus trap and one tab stop per row are all in place; **a full tab-order walk was not performed** | F02.1 keyboard checks, `select.tsx`, `expense-rows.tsx` |
+| F06-T45 | Long merchant names, large amounts | **PASS (browser)** - a real expense with a **200-character merchant**, a 48-character reference, a 37-character employee id and `SAR 2,147,483.64` (the int4 ceiling) rendered in the table, the mobile cards and the detail view. **It broke the table layout on first run** - fixed, see AI_LOG 37 | `f06-long-content-1440.png`, `f06-long-content-360.png`, `f06-long-content-detail-360.png` |
+| F06-T46 | Keyboard navigation | **PASS (browser)** - twelve Tab presses recorded in order: skip link first, sidebar, user menu, search, three filters, then **one stop per row**. Every stop reported `outline: solid 1.6px`. Enter on a row navigated. In the drawer: Enter opened it, focus moved inside, 20 elements outside were marked inert, **Escape closed it and returned focus to the trigger** | Recorded focus log |
 | F06-T47 | Contrast and status indicators | **PASS** - no new token was introduced; every badge renders a **word** as well as a tone | `globals.css` (15/15 measured pairs, F02.1), `status-badges.tsx` |
 | F06-T48 | Production frontend build | **PASS** - `next build` succeeded; 8 routes, all dynamic as intended | Build output |
 | F06-T49 | Docker integration | **PASS** - `docker compose up --build`, all three services healthy, every check above run against it | `docker compose ps` |
@@ -190,9 +201,6 @@ Stated so it is not mistaken for done.
 
 | Gap | Why |
 |---|---|
-| F06-T35, a forced server failure in the browser | The boundaries exist and are reachable; injecting a 500 would have meant a temporary code change shipped or reverted. **Marked PARTIAL, not PASS** |
-| F06-T45, a 200-character merchant rendered | The CSS is in place and the amount ceiling is unit-tested; the string itself was not put through the UI |
-| F06-T46, a full tab-order walk | Individual affordances verified; the end-to-end keyboard path was not walked |
 | Any automated frontend **interaction** test | No DOM test runner was added (R-23, unchanged from F02.1). Component behaviour is browser-verified and recorded as such |
 | Load or performance testing | Not performed anywhere in this repository. The 4,000-row `EXPLAIN` is a **plan**, not a throughput measurement |
 | Accessibility conformance | WCAG 2.2 AA **principles** were targeted and specific criteria checked. **No conformance claim is made** |
