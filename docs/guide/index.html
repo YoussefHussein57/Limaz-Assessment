@@ -1,0 +1,2587 @@
+<title>LIMAZ System Walkthrough</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;0,700;1,400&family=IBM+Plex+Mono:wght@400;500;600&display=swap">
+
+<style>
+  /* Layout: one long document, a sticky part-rail on the left at desktop,
+     collapsing to a sticky top bar on phones. Figures and screenshots are
+     full-bleed inside the reading column. */
+  :root {
+    --bg: #FAFBFC;
+    --surface: #FFFFFF;
+    --surface-2: #F3F5F8;
+    --ink: #0E1420;
+    --ink-2: #39455A;
+    --muted: #68748A;
+    --line: #E1E6EE;
+    --line-2: #CBD3E0;
+    --accent: #1D4ED8;
+    --accent-soft: #E8EEFC;
+    --approve: #15803D;
+    --approve-soft: #E6F4EA;
+    --review: #A35A07;
+    --review-soft: #FDF0DC;
+    --reject: #B3261E;
+    --reject-soft: #FBEAE8;
+    --shadow: 0 1px 2px rgba(14, 20, 32, .06), 0 8px 24px -12px rgba(14, 20, 32, .14);
+
+    --font-ui: "IBM Plex Sans", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+    --font-mono: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  }
+
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #0B0F16;
+      --surface: #121823;
+      --surface-2: #19202C;
+      --ink: #E9EDF4;
+      --ink-2: #C0C9D8;
+      --muted: #8D9AAF;
+      --line: #212A38;
+      --line-2: #303C4E;
+      --accent: #7DA2FF;
+      --accent-soft: #16233D;
+      --approve: #6EE7A0;
+      --approve-soft: #11271C;
+      --review: #F0B45E;
+      --review-soft: #2A1F0E;
+      --reject: #FF9A91;
+      --reject-soft: #2C1513;
+      --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 8px 24px -12px rgba(0, 0, 0, .7);
+      color-scheme: dark;
+    }
+  }
+
+  :root[data-theme="dark"] {
+    --bg: #0B0F16;
+    --surface: #121823;
+    --surface-2: #19202C;
+    --ink: #E9EDF4;
+    --ink-2: #C0C9D8;
+    --muted: #8D9AAF;
+    --line: #212A38;
+    --line-2: #303C4E;
+    --accent: #7DA2FF;
+    --accent-soft: #16233D;
+    --approve: #6EE7A0;
+    --approve-soft: #11271C;
+    --review: #F0B45E;
+    --review-soft: #2A1F0E;
+    --reject: #FF9A91;
+    --reject-soft: #2C1513;
+    --shadow: 0 1px 2px rgba(0, 0, 0, .5), 0 8px 24px -12px rgba(0, 0, 0, .7);
+    color-scheme: dark;
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: var(--font-ui);
+    font-size: 16px;
+    line-height: 1.6;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  body::before {
+    content: "";
+    position: fixed;
+    inset: 0 0 auto;
+    height: env(safe-area-inset-top, 0px);
+    z-index: 40;
+    background: var(--surface);
+  }
+
+  /* ---------- shell ---------- */
+
+  .shell {
+    display: grid;
+    grid-template-columns: 250px minmax(0, 1fr);
+    gap: 40px;
+    max-width: 1240px;
+    margin: 0 auto;
+    padding-left: max(16px, env(safe-area-inset-left, 0px));
+    padding-right: max(16px, env(safe-area-inset-right, 0px));
+    padding-block: 0 96px;
+  }
+
+  @media (max-width: 920px) {
+    .shell { grid-template-columns: minmax(0, 1fr); gap: 0; }
+  }
+
+  /* ---------- rail ---------- */
+
+  .rail {
+    position: sticky;
+    top: calc(env(safe-area-inset-top, 0px) + 24px);
+    align-self: start;
+    max-height: calc(100vh - 60px);
+    overflow-y: auto;
+    padding-block: 28px 24px;
+  }
+
+  .rail-brand {
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    font-size: 15px;
+    margin: 0 0 2px;
+  }
+
+  .rail-sub {
+    margin: 0 0 20px;
+    font-size: 12.5px;
+    color: var(--muted);
+    line-height: 1.45;
+  }
+
+  .rail nav { display: flex; flex-direction: column; gap: 1px; }
+
+  .rail a {
+    display: flex;
+    gap: 10px;
+    align-items: baseline;
+    padding: 6px 10px;
+    border-radius: 7px;
+    color: var(--ink-2);
+    text-decoration: none;
+    font-size: 13.5px;
+    border-left: 2px solid transparent;
+  }
+
+  .rail a:hover { background: var(--surface-2); color: var(--ink); }
+  .rail a .n { font-family: var(--font-mono); font-size: 11px; color: var(--muted); min-width: 16px; }
+
+  @media (max-width: 920px) {
+    .rail {
+      position: static;
+      max-height: none;
+      padding-block: 24px 8px;
+      border-bottom: 1px solid var(--line);
+      margin-bottom: 24px;
+    }
+    .rail nav { flex-direction: row; flex-wrap: wrap; gap: 6px; }
+    .rail a { border: 1px solid var(--line); border-left-width: 1px; }
+  }
+
+  /* ---------- reading column ---------- */
+
+  main { min-width: 0; padding-block: 40px 0; }
+
+  .masthead { margin-bottom: 44px; }
+
+  .eyebrow {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--muted);
+    margin: 0 0 12px;
+  }
+
+  h1 {
+    font-size: clamp(30px, 5.2vw, 46px);
+    line-height: 1.08;
+    letter-spacing: -0.035em;
+    font-weight: 700;
+    margin: 0 0 16px;
+    text-wrap: balance;
+  }
+
+  .lede {
+    font-size: clamp(16px, 2.1vw, 18.5px);
+    color: var(--ink-2);
+    margin: 0 0 24px;
+    max-width: 64ch;
+  }
+
+  .facts {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+
+  .fact {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    padding: 5px 10px;
+    border: 1px solid var(--line);
+    border-radius: 999px;
+    color: var(--ink-2);
+    background: var(--surface);
+  }
+
+  section.part { scroll-margin-top: 20px; padding-block: 40px 8px; border-top: 1px solid var(--line); }
+  section.part:first-of-type { border-top: 0; padding-top: 0; }
+
+  .part-head { margin-bottom: 28px; }
+
+  .part-num {
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    letter-spacing: .14em;
+    color: var(--accent);
+    text-transform: uppercase;
+    margin: 0 0 8px;
+  }
+
+  h2 {
+    font-size: clamp(23px, 3.4vw, 31px);
+    line-height: 1.15;
+    letter-spacing: -0.028em;
+    font-weight: 700;
+    margin: 0 0 10px;
+    text-wrap: balance;
+  }
+
+  h3 {
+    font-size: 19px;
+    line-height: 1.25;
+    letter-spacing: -0.018em;
+    font-weight: 600;
+    margin: 36px 0 10px;
+    text-wrap: balance;
+  }
+
+  h4 {
+    font-size: 15.5px;
+    font-weight: 600;
+    margin: 24px 0 8px;
+    letter-spacing: -0.01em;
+  }
+
+  p { margin: 0 0 14px; max-width: 70ch; }
+  .part-head p { color: var(--ink-2); }
+
+  ul, ol { margin: 0 0 16px; padding-left: 22px; max-width: 70ch; }
+  li { margin-bottom: 7px; }
+
+  a { color: var(--accent); }
+
+  strong { font-weight: 600; color: var(--ink); }
+
+  code {
+    font-family: var(--font-mono);
+    font-size: .88em;
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    border-radius: 4px;
+    padding: 1px 5px;
+    color: var(--ink);
+  }
+
+  /* ---------- blocks ---------- */
+
+  .card {
+    background: var(--surface);
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    padding: 20px 22px;
+    margin: 20px 0;
+    box-shadow: var(--shadow);
+  }
+
+  .card > :last-child { margin-bottom: 0; }
+
+  .note {
+    border-left: 3px solid var(--accent);
+    background: var(--accent-soft);
+    border-radius: 0 10px 10px 0;
+    padding: 14px 18px;
+    margin: 20px 0;
+  }
+  .note > :last-child { margin-bottom: 0; }
+  .note p { max-width: none; }
+
+  .note.warn { border-left-color: var(--review); background: var(--review-soft); }
+  .note.bad { border-left-color: var(--reject); background: var(--reject-soft); }
+  .note.good { border-left-color: var(--approve); background: var(--approve-soft); }
+
+  .note-label {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: .1em;
+    text-transform: uppercase;
+    color: var(--muted);
+    display: block;
+    margin-bottom: 6px;
+  }
+
+  /* ---------- code ---------- */
+
+  .code {
+    margin: 18px 0;
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--surface);
+  }
+
+  .code-head {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px 14px;
+    align-items: baseline;
+    justify-content: space-between;
+    padding: 8px 14px;
+    background: var(--surface-2);
+    border-bottom: 1px solid var(--line);
+    font-family: var(--font-mono);
+    font-size: 11.5px;
+    color: var(--muted);
+  }
+
+  .code-head .path { color: var(--ink-2); word-break: break-all; }
+
+  .code pre {
+    margin: 0;
+    padding: 14px 16px;
+    overflow-x: auto;
+    font-family: var(--font-mono);
+    font-size: 12.5px;
+    line-height: 1.62;
+    color: var(--ink);
+    tab-size: 2;
+  }
+
+  .code .c { color: var(--muted); font-style: italic; }
+  .code .k { color: var(--accent); }
+  .code .s { color: var(--approve); }
+
+  /* ---------- tables ---------- */
+
+  .table-wrap { overflow-x: auto; margin: 18px 0; border: 1px solid var(--line); border-radius: 10px; }
+
+  table { border-collapse: collapse; width: 100%; font-size: 14px; background: var(--surface); }
+
+  th, td { text-align: left; padding: 9px 13px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { background: var(--surface-2); font-weight: 600; font-size: 12.5px; letter-spacing: .01em; white-space: nowrap; }
+  tr:last-child td { border-bottom: 0; }
+  td code { white-space: nowrap; }
+
+  /* ---------- figures ---------- */
+
+  figure { margin: 22px 0; }
+
+  figure svg { display: block; width: 100%; max-width: 100%; height: auto; color: var(--ink-2); }
+
+  .fig-frame {
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--surface);
+    padding: 18px 16px;
+    overflow-x: auto;
+  }
+
+  figcaption {
+    font-size: 13px;
+    color: var(--muted);
+    margin-top: 10px;
+    max-width: 70ch;
+  }
+
+  .shot {
+    border: 1px solid var(--line-2);
+    border-radius: 10px;
+    overflow: hidden;
+    background: var(--surface);
+    box-shadow: var(--shadow);
+  }
+
+  .shot img { display: block; width: 100%; height: auto; }
+
+  .shot-pair { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+
+  /* ---------- badges ---------- */
+
+  .pill {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    border: 1px solid var(--line-2);
+    color: var(--ink-2);
+    white-space: nowrap;
+  }
+  .pill.ok { color: var(--approve); border-color: var(--approve); background: var(--approve-soft); }
+  .pill.rev { color: var(--review); border-color: var(--review); background: var(--review-soft); }
+  .pill.no { color: var(--reject); border-color: var(--reject); background: var(--reject-soft); }
+
+  /* ---------- decision blocks ---------- */
+
+  .choice { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 14px; margin: 16px 0; }
+
+  .opt {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    padding: 14px 16px;
+    background: var(--surface);
+  }
+
+  .opt.picked { border-color: var(--approve); background: var(--approve-soft); }
+
+  .opt h5 {
+    margin: 0 0 6px;
+    font-size: 13.5px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 7px;
+  }
+
+  .opt p { font-size: 13.5px; margin: 0; color: var(--ink-2); max-width: none; }
+
+  .verdict {
+    font-family: var(--font-mono);
+    font-size: 10.5px;
+    letter-spacing: .08em;
+    text-transform: uppercase;
+    padding: 1px 6px;
+    border-radius: 4px;
+    border: 1px solid var(--line-2);
+    color: var(--muted);
+  }
+  .opt.picked .verdict { color: var(--approve); border-color: var(--approve); }
+
+  /* ---------- q&a ---------- */
+
+  details.qa {
+    border: 1px solid var(--line);
+    border-radius: 10px;
+    background: var(--surface);
+    margin: 10px 0;
+    overflow: hidden;
+  }
+
+  details.qa > summary {
+    cursor: pointer;
+    padding: 13px 16px;
+    font-weight: 600;
+    font-size: 14.5px;
+    list-style: none;
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+  }
+
+  details.qa > summary::-webkit-details-marker { display: none; }
+
+  details.qa > summary::before {
+    content: "+";
+    font-family: var(--font-mono);
+    color: var(--accent);
+    font-weight: 600;
+    line-height: 1.45;
+  }
+
+  details.qa[open] > summary::before { content: "\2212"; }
+  details.qa > summary:hover { background: var(--surface-2); }
+  details.qa .qa-body { padding: 0 16px 14px 38px; border-top: 1px solid var(--line); padding-top: 14px; }
+  details.qa .qa-body > :last-child { margin-bottom: 0; }
+
+  :focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { animation: none !important; transition: none !important; }
+  }
+
+  footer.end {
+    margin-top: 48px;
+    padding-top: 24px;
+    border-top: 1px solid var(--line);
+    font-size: 13.5px;
+    color: var(--muted);
+  }
+</style>
+
+<div class="shell">
+  <aside class="rail">
+    <p class="rail-brand">LIMAZ Walkthrough</p>
+    <p class="rail-sub">Expense policy engine &middot; v1.1.0-bonus</p>
+    <nav aria-label="Parts of this guide">
+      <a href="#orientation"><span class="n">00</span> Orientation</a>
+      <a href="#product"><span class="n">01</span> The product, screen by screen</a>
+      <a href="#inside"><span class="n">02</span> Inside a request</a>
+      <a href="#cycles"><span class="n">03</span> The five cycles</a>
+      <a href="#decisions"><span class="n">04</span> Decisions &amp; alternatives</a>
+      <a href="#questions"><span class="n">05</span> The hard questions</a>
+      <a href="#codemap"><span class="n">06</span> Where the code lives</a>
+    </nav>
+  </aside>
+
+  <main>
+    <header class="masthead">
+      <p class="eyebrow">System walkthrough &middot; 21 November 2026</p>
+      <h1>How LIMAZ decides, records and defends every expense</h1>
+      <p class="lede">
+        A company's backend submits an expense. A policy engine approves it, flags it, or rejects it.
+        A manager resolves what gets flagged. A card provider can submit one too, over a signed webhook.
+        This guide follows each of those paths from the first byte to the stored row &mdash; with the real
+        screens, the real code, and the alternatives that were rejected on the way.
+      </p>
+      <div class="facts">
+        <span class="fact">649 automated tests</span>
+        <span class="fact">534 against real PostgreSQL</span>
+        <span class="fact">4 negative controls</span>
+        <span class="fact">NestJS 11 &middot; Next 16 &middot; Prisma 7</span>
+        <span class="fact">PostgreSQL 17</span>
+      </div>
+    </header>
+    <!-- ===================================================================
+         PART 00 - ORIENTATION
+         =================================================================== -->
+    <section class="part" id="orientation">
+      <div class="part-head">
+        <p class="part-num">Part 00</p>
+        <h2>Orientation</h2>
+        <p>
+          Four kinds of caller reach this system, and each one proves who it is in a different way.
+          Everything else in this guide follows from that.
+        </p>
+      </div>
+
+      <figure>
+        <div class="fig-frame">
+          <svg viewBox="0 0 860 300" role="img" aria-label="Four callers reach the API: a company backend with an API key, a manager with a session cookie, a platform administrator with a session cookie, and a card provider with an HMAC signature. Each arrow is labelled with the credential and what the company identity is resolved from.">
+            <defs>
+              <marker id="ar" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"></path>
+              </marker>
+            </defs>
+
+            <!-- callers -->
+            <g font-size="12.5" font-family="inherit">
+              <rect x="8" y="14" width="196" height="46" rx="8" fill="none" stroke="currentColor" stroke-width="1.2"></rect>
+              <text x="20" y="33" fill="currentColor" font-weight="600">Company backend</text>
+              <text x="20" y="49" fill="currentColor" opacity=".65">server to server</text>
+
+              <rect x="8" y="76" width="196" height="46" rx="8" fill="none" stroke="currentColor" stroke-width="1.2"></rect>
+              <text x="20" y="95" fill="currentColor" font-weight="600">Company manager</text>
+              <text x="20" y="111" fill="currentColor" opacity=".65">in a browser</text>
+
+              <rect x="8" y="138" width="196" height="46" rx="8" fill="none" stroke="currentColor" stroke-width="1.2"></rect>
+              <text x="20" y="157" fill="currentColor" font-weight="600">Platform administrator</text>
+              <text x="20" y="173" fill="currentColor" opacity=".65">in a browser</text>
+
+              <rect x="8" y="200" width="196" height="46" rx="8" fill="none" stroke="currentColor" stroke-width="1.2"></rect>
+              <text x="20" y="219" fill="currentColor" font-weight="600">Card provider</text>
+              <text x="20" y="235" fill="currentColor" opacity=".65">no account here at all</text>
+            </g>
+
+            <!-- arrows + credential labels -->
+            <g stroke="currentColor" stroke-width="1.2" marker-end="url(#ar)" fill="none">
+              <line x1="206" y1="37" x2="470" y2="37"></line>
+              <line x1="206" y1="99" x2="470" y2="99"></line>
+              <line x1="206" y1="161" x2="470" y2="161"></line>
+              <line x1="206" y1="223" x2="470" y2="223"></line>
+            </g>
+
+            <g font-size="11" font-family="ui-monospace, monospace" fill="currentColor">
+              <text x="216" y="31">x-api-key</text>
+              <text x="216" y="93">limaz_session cookie</text>
+              <text x="216" y="155">limaz_session cookie</text>
+              <text x="216" y="217">x-limaz-signature</text>
+            </g>
+
+            <!-- api -->
+            <rect x="478" y="14" width="140" height="232" rx="10" fill="none" stroke="currentColor" stroke-width="1.6"></rect>
+            <text x="548" y="124" text-anchor="middle" fill="currentColor" font-size="14" font-weight="700">LIMAZ API</text>
+            <text x="548" y="142" text-anchor="middle" fill="currentColor" font-size="11" opacity=".65">resolves the company</text>
+
+            <!-- resolution -->
+            <g stroke="currentColor" stroke-width="1.2" marker-end="url(#ar)" fill="none">
+              <line x1="620" y1="37" x2="690" y2="37"></line>
+              <line x1="620" y1="99" x2="690" y2="99"></line>
+              <line x1="620" y1="161" x2="690" y2="161"></line>
+              <line x1="620" y1="223" x2="690" y2="223"></line>
+            </g>
+
+            <g font-size="11.5" font-family="inherit" fill="currentColor">
+              <text x="698" y="41">the matched key row</text>
+              <text x="698" y="103">the user row</text>
+              <text x="698" y="165">none &mdash; by design</text>
+              <text x="698" y="227">the verifying secret</text>
+            </g>
+
+            <line x1="690" y1="258" x2="690" y2="268" stroke="none"></line>
+            <text x="8" y="282" fill="currentColor" font-size="11.5" opacity=".7">
+              No route anywhere reads a company id from a request body.
+            </text>
+          </svg>
+        </div>
+        <figcaption>
+          Every caller is told apart by its credential, and the company is derived from that credential
+          rather than from anything the caller typed. A platform administrator deliberately has no company
+          of their own, which is why the admin routes take a company id in the <em>path</em> &mdash; after the
+          role has already been established.
+        </figcaption>
+      </figure>
+
+      <h3>The one rule everything else protects</h3>
+
+      <div class="note">
+        <span class="note-label">The invariant</span>
+        <p>
+          <strong>A company can only ever see its own data, and the company is resolved from the verified
+          credential, never from the request.</strong> Two routes take a company id in the path; both are
+          platform-administrator routes where the id is a <em>selector</em> applied after the role check, not
+          a claim of identity.
+        </p>
+      </div>
+
+      <h3>Two words that are not the same word</h3>
+
+      <p>
+        The single most important idea in the data model is that <code>decision</code> and <code>status</code>
+        are separate columns, and neither overwrites the other.
+      </p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Column</th><th>Who writes it</th><th>Values</th><th>Changes later?</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><code>decision</code></td>
+              <td>The policy engine, once, at submission</td>
+              <td><span class="pill ok">APPROVE</span> <span class="pill rev">REVIEW</span> <span class="pill no">REJECT</span></td>
+              <td><strong>Never.</strong> It is history</td>
+            </tr>
+            <tr>
+              <td><code>status</code></td>
+              <td>The engine, then possibly a manager</td>
+              <td><code>APPROVED</code> <code>PENDING_REVIEW</code> <code>REJECTED</code></td>
+              <td>Yes, once, when a review is resolved</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        So an expense can read <strong>&ldquo;Policy: Review&rdquo; and &ldquo;Approved&rdquo; at the same time</strong>, and that
+        is not a contradiction &mdash; it is the audit trail saying the machine flagged it and a human then
+        let it through. You will see exactly that screen in Part 01.
+      </p>
+
+      <h3>What a reviewer can run</h3>
+
+      <div class="code">
+        <div class="code-head"><span class="path">from a clean clone</span><span>verified 38/38</span></div>
+        <pre>cp .env.example .env
+docker compose up          <span class="c"># db + api + web, migrations, seed</span>
+
+<span class="c"># http://localhost:3000  -  two seeded companies, different policies</span></pre>
+      </div>
+    </section>
+    <!-- ===================================================================
+         PART 01 - THE PRODUCT, SCREEN BY SCREEN
+         =================================================================== -->
+    <section class="part" id="product">
+      <div class="part-head">
+        <p class="part-num">Part 01</p>
+        <h2>The product, screen by screen</h2>
+        <p>
+          Every screenshot below was taken from the running system on 21 November 2026, against
+          <strong>Delta Consulting</strong> &mdash; one of the two seeded companies. Its policy auto-approves up to
+          <strong>SAR 2,000.00</strong>, flags more than <strong>5 expenses in 30 minutes</strong> from one employee, and
+          rejects <code>ALCOHOL</code> and <code>GAMBLING</code> outright. Nile Logistics, the other seeded company,
+          has deliberately different numbers, which is how the tests prove the policy is per company
+          rather than global.
+        </p>
+      </div>
+
+      <h3>Story 1 &mdash; Getting in</h3>
+
+      <p>
+        There is one way in. No route in the company workspace renders anything for an unauthenticated
+        caller: asking for <code>/dashboard</code> without a session lands on the sign-in page with a reason
+        attached, and the reason is why the page explains itself instead of just appearing.
+      </p>
+
+      <div class="shot-pair">
+        <figure>
+          <div class="shot"><img src="screens/01-login.png" alt="The LIMAZ sign-in page with email and password fields and a show-password toggle."></div>
+          <figcaption>Sign-in. The password field has a real show/hide toggle whose label names the action it will perform.</figcaption>
+        </figure>
+        <figure>
+          <div class="shot"><img src="screens/21-login-refused.png" alt="The sign-in page showing the message: Email or password is incorrect."></div>
+          <figcaption>A wrong password. One message for both causes &mdash; it never reveals whether the address exists.</figcaption>
+        </figure>
+      </div>
+
+      <div class="note">
+        <span class="note-label">Why one message</span>
+        <p>
+          &ldquo;No such user&rdquo; and &ldquo;wrong password&rdquo; are different answers to an attacker: the first one
+          confirms an address is registered. The login schema's minimum password length is deliberately
+          loose for the same reason &mdash; a &ldquo;too short&rdquo; validation error would be a third answer that
+          leaks the same thing.
+        </p>
+      </div>
+
+      <h3>Story 2 &mdash; What the manager sees first</h3>
+
+      <figure>
+        <div class="shot"><img src="screens/02-dashboard.png" alt="Delta Consulting dashboard: 9 total expenses, 5 approved, 1 pending review, 3 rejected, with a banner linking to reviews and a table of recent expenses."></div>
+        <figcaption>
+          The overview. Four totals from <strong>one</strong> aggregate query, a banner that appears only when
+          something is actually waiting, and the most recent expenses with both the policy decision and the
+          current status on every row.
+        </figcaption>
+      </figure>
+
+      <p>
+        The totals reconcile: 5 + 1 + 3 = 9. They are counted by <em>current status</em>, which is why an
+        expense the policy flagged and a manager then approved counts as approved here while still
+        showing &ldquo;Review&rdquo; in its decision column.
+      </p>
+
+      <figure>
+        <div class="shot"><img src="screens/03-expenses-list.png" alt="The expenses list with a search box, status, policy decision and category filters, and a table of expenses."></div>
+        <figcaption>
+          The expense list: search across merchant, reference and employee, three filters, and keyset
+          pagination. Ordered by <strong>when the money was spent</strong>, not when it arrived &mdash; and the footnote
+          says so, because that makes a back-dated expense appear mid-list instead of at the top.
+        </figcaption>
+      </figure>
+
+      <h3>Story 3 &mdash; Why an expense got the answer it got</h3>
+
+      <p>
+        This is the screen that carries the product's argument. An expense detail does not say
+        &ldquo;rejected&rdquo;; it says which rule fired, what the engine measured at the time, and what the policy
+        said at that moment.
+      </p>
+
+      <figure>
+        <div class="shot"><img src="screens/04-expense-detail-reject.png" alt="Expense detail for Oasis Lounge, SAR 180.00, rejected. It shows the BLOCKED_CATEGORY rule with the submitted category GAMBLING and the blocked list at the time, the policy snapshot, and the submission details including spent and received times."></div>
+        <figcaption>
+          A rejected expense. The rule hit names the submitted category <em>and</em> the blocked list as it
+          stood when the expense was judged. The right column states plainly that no review was opened,
+          because <code>REJECT</code> is final and needs no human.
+        </figcaption>
+      </figure>
+
+      <div class="note good">
+        <span class="note-label">The part that matters</span>
+        <p>
+          <strong>&ldquo;Policy in force when this was judged&rdquo;</strong> is a snapshot stored on the expense row, not a
+          lookup of today's policy. Change the limit tomorrow and this page still shows SAR 2,000.00,
+          because that is what the expense was actually measured against. A reviewer can change the policy
+          and watch old decisions stay exactly as they were.
+        </p>
+      </div>
+
+      <h3>Story 4 &mdash; A human decides</h3>
+
+      <figure>
+        <div class="shot"><img src="screens/05-reviews-queue.png" alt="The reviews queue showing one open review: Hilton Riyadh, SAR 3,200.00, with an Over the limit reason chip."></div>
+        <figcaption>The review queue, filtered to what is waiting. Each row carries the reason the policy flagged it.</figcaption>
+      </figure>
+
+      <figure>
+        <div class="shot"><img src="screens/06-review-detail.png" alt="Review detail for Hilton Riyadh showing Approve and Reject buttons, the AMOUNT_LIMIT rule with expense amount SAR 3,200, limit SAR 2,000 and over by SAR 1,200, and the policy snapshot."></div>
+        <figcaption>
+          The review. The rule hit does the arithmetic for the manager: amount, limit, and
+          <strong>over by SAR 1,200.00</strong>. Under it, the policy that produced the flag.
+        </figcaption>
+      </figure>
+
+      <figure>
+        <div class="shot"><img src="screens/07-confirm-dialog.png" alt="A confirmation dialog: Approve this expense? SAR 3,200.00 at Hilton Riyadh will be marked approved. Your name and the time are recorded, and the decision cannot be changed afterwards. Buttons: Cancel and Yes, approve."></div>
+        <figcaption>
+          The confirmation names the amount and the merchant, and says the two things a person needs to
+          know before clicking: their name is recorded, and this cannot be undone.
+        </figcaption>
+      </figure>
+
+      <p>
+        The dialog traps focus, closes on <kbd>Escape</kbd>, and returns focus to the button that opened it.
+        That was verified in a real browser rather than assumed from the component library.
+      </p>
+
+      <figure>
+        <div class="shot"><img src="screens/08-review-resolved.png" alt="The resolved review showing three badges: Policy Review, Approved, and Approved by a manager. A green banner reads Approved by Omar Fathy. This review is closed and cannot be resolved again. A side panel shows opened, decided by and decided times, with a note that the policy said reviewable and a manager then decided."></div>
+        <figcaption>
+          <strong>The single most important screen in the product.</strong> Three badges at once:
+          <span class="pill rev">Policy: Review</span> <span class="pill ok">Approved</span>
+          <span class="pill ok">Approved by a manager</span> &mdash; and the side panel spells it out:
+          &ldquo;the policy said reviewable; a manager then decided. Both facts are kept &mdash; neither replaces the other.&rdquo;
+        </figcaption>
+      </figure>
+
+      <h3>Story 5 &mdash; The rules themselves</h3>
+
+      <figure>
+        <div class="shot"><img src="screens/09-policy.png" alt="The policy page with an auto-approval limit field, a frequency rule with expenses allowed and window in minutes, and a blocked categories editor showing ALCOHOL and GAMBLING."></div>
+        <figcaption>
+          The four settings a manager owns. Each explains its own effect in a sentence that updates with the
+          value &mdash; &ldquo;the rule fires on expense number 6 within 30 minutes&rdquo; &mdash; because <em>more than 5</em>
+          and <em>5 or more</em> are an easy and expensive thing to get backwards.
+        </figcaption>
+      </figure>
+
+      <div class="note warn">
+        <span class="note-label">Stated on the page itself</span>
+        <p>
+          Changes apply to <strong>new</strong> evaluations. Expenses already submitted keep the policy and the
+          decision they were given. The UI says this under the save button rather than leaving a manager to
+          discover it.
+        </p>
+      </div>
+
+      <h3>Story 6 &mdash; What a manager cannot do</h3>
+
+      <div class="shot-pair">
+        <figure>
+          <div class="shot"><img src="screens/10-cross-tenant-404.png" alt="A page reading: That expense is not here. It does not exist, or it belongs to another company."></div>
+          <figcaption>Another company's expense id, typed into the URL. <strong>404, never 403.</strong></figcaption>
+        </figure>
+        <figure>
+          <div class="shot"><img src="screens/11-manager-blocked-from-admin.png" alt="A page reading: Platform administration. This area is for platform administrators. You are signed in as a company manager, so it is not available to you."></div>
+          <figcaption>A manager asking for the admin area. Refused, with an explanation rather than a blank page.</figcaption>
+        </figure>
+      </div>
+
+      <div class="note">
+        <span class="note-label">Why 404 and not 403</span>
+        <p>
+          <strong>403 confirms the row exists.</strong> Walk a list of ids with a 403/404 oracle and you learn
+          exactly how many expenses your competitor has. The same answer for &ldquo;no such expense&rdquo; and
+          &ldquo;not yours&rdquo; gives an attacker nothing, and the wording in the UI matches: <em>&ldquo;it does not exist,
+          or it belongs to another company.&rdquo;</em>
+        </p>
+      </div>
+
+      <p>
+        The gate runs in both directions. A platform administrator asking for a company workspace is
+        refused too, because an administrator belongs to no company and a workspace without a company is
+        not a thing this system can render.
+      </p>
+
+      <figure>
+        <div class="shot"><img src="screens/20-admin-blocked-from-workspace.png" alt="A page reading: Company workspace. This area is for a company's own manager. You are signed in as a platform administrator, who belongs to no single company, so there is no workspace here to show."></div>
+        <figcaption>The reverse gate. Separation of duties is enforced in the API; this page is only how it is explained.</figcaption>
+      </figure>
+
+      <h3>Story 7 &mdash; Onboarding a company, end to end</h3>
+
+      <p>
+        A platform administrator can take a company from nothing to working without touching the database.
+        That was not true before the final feature: creating a manager was the one step that had no screen,
+        and the company detail page used to carry a warning saying so.
+      </p>
+
+      <figure>
+        <div class="shot"><img src="screens/13-admin-companies.png" alt="The platform administration companies list, searched for Consulting, showing Delta Consulting with one active key."></div>
+        <figcaption>Every company on the deployment, searchable. This is the only place in the system that reads across tenants, and it is an administrator-only route.</figcaption>
+      </figure>
+
+      <figure>
+        <div class="shot"><img src="screens/14-company-detail.png" alt="Delta Consulting's detail page showing a Managers panel with Omar Fathy, an API keys panel with a truncated key and Rotate and Revoke buttons, a Card webhook panel with endpoint, delivery id and secret version, an expense policy summary, an accounts summary, and an integration code snippet."></div>
+        <figcaption>
+          One company, everything an administrator controls: its managers, its API keys, its card-webhook
+          integration, and a read-only view of the policy &mdash; which the <em>manager</em> owns, not the
+          administrator. The page says that in as many words.
+        </figcaption>
+      </figure>
+
+      <p>
+        Note what is <em>not</em> on that page. The API key shows a truncated prefix and nothing more: keys are
+        stored as a SHA-256 hash, so the full value genuinely cannot be retrieved. The webhook panel shows a
+        delivery id and a secret version, never the signing secret.
+      </p>
+
+      <figure>
+        <div class="shot"><img src="screens/15-add-manager-dialog.png" alt="The Add a manager dialog with full name, email and initial password fields, a show-password toggle, and explanatory text."></div>
+        <figcaption>
+          Creating a manager. Three fields &mdash; and deliberately no role selector and no company selector,
+          because both are written by the server.
+        </figcaption>
+      </figure>
+
+      <div class="note bad">
+        <span class="note-label">Try to set them anyway</span>
+        <p>
+          Sending <code>"role": "PLATFORM_ADMIN"</code> or a different <code>"companyId"</code> in the request body is a
+          <strong>400 that creates nothing</strong> &mdash; not a field that is parsed and then ignored. The schema is
+          <code>.strict()</code> and neither field is declared, so the request dies at the parse. &ldquo;Ignored&rdquo; is a
+          property of today's service code; &ldquo;refused&rdquo; is a property of the schema and survives whatever
+          the service does next.
+        </p>
+      </div>
+
+      <h3>Story 8 &mdash; A card provider submits, without any account</h3>
+
+      <p>
+        The optional bonus. A card provider has no API key and no session. It authenticates on a
+        per-request HMAC signature, and the sandbox simulator lets you watch the whole path without a
+        provider, a card, or any money.
+      </p>
+
+      <figure>
+        <div class="shot"><img src="screens/17-simulator-result.png" alt="The payment simulator with a sandbox warning, a form set to Delta Consulting with cardholder emp-14, merchant Marriott Jeddah, category TRAVEL and amount 4150.00, and a result panel listing six completed steps ending in Policy decided REVIEW with the expense id and final status PENDING_REVIEW."></div>
+        <figcaption>
+          One simulated payment, and the entire pipeline reported back as six steps: signed by the server,
+          delivered over real HTTP (<code>202</code>), signature and timestamp verified, stored in the inbox,
+          processed after one attempt, and decided <code>REVIEW</code> by the same policy engine that judges API
+          submissions. SAR 4,150.00 is over Delta's SAR 2,000.00 limit.
+        </figcaption>
+      </figure>
+
+      <div class="note">
+        <span class="note-label">Why the simulator is not a shortcut</span>
+        <p>
+          It does <strong>not</strong> call the expense service directly. It builds a synthetic provider event, signs
+          it server-side, and sends a real signed HTTP request to the real endpoint &mdash; which is why its
+          failure presets actually fail.
+        </p>
+      </div>
+
+      <figure>
+        <div class="shot"><img src="screens/18-simulator-refused.png" alt="The simulator showing a refused result: HTTP 401, with the delivery refused and a note that the invalid-signature preset was rejected by the real verifier."></div>
+        <figcaption>
+          The &ldquo;invalid signature&rdquo; preset. A <code>401</code> from the genuine verifier &mdash; the simulator has no
+          way to bypass a check, because it goes through the front door like everyone else.
+        </figcaption>
+      </figure>
+
+      <figure>
+        <div class="shot"><img src="screens/19-webhook-events.png" alt="The webhook events page filtered to Delta Consulting, showing a processed event with a REVIEW decision, the company, event type, received time, attempt count and the linked expense id."></div>
+        <figcaption>
+          Every delivery this deployment accepted, read-only by construction. No retry button and no edit:
+          a retry here would be a second delivery the provider never sent. A delivery that failed signature
+          verification is <strong>absent</strong> rather than listed as rejected, because nothing is stored before the
+          signature verifies.
+        </figcaption>
+      </figure>
+
+      <h3>On a phone</h3>
+
+      <figure>
+        <div class="shot" style="max-width: 390px; margin-inline: auto;"><img src="screens/12-mobile-expenses.png" alt="The expenses list at 390 pixels wide: the table has become stacked cards, the navigation has collapsed to a hamburger, and the filters are full width."></div>
+        <figcaption>
+          390&nbsp;px. The table becomes cards, navigation collapses to a menu, filters go full width.
+          Measured at 360, 375, 414, 768, 1024 and 1440&nbsp;px across eight screens:
+          <strong>zero horizontal overflow</strong> at every width.
+        </figcaption>
+      </figure>
+    </section>
+    <!-- ===================================================================
+         PART 02 - INSIDE A REQUEST
+         =================================================================== -->
+    <section class="part" id="inside">
+      <div class="part-head">
+        <p class="part-num">Part 02</p>
+        <h2>Inside a request</h2>
+        <p>
+          What actually happens between the first byte arriving and a row existing. Everything in this
+          part is the real pipeline, in the real order, with the code that implements it.
+        </p>
+      </div>
+
+      <h3>The order of the gates, and why it is that order</h3>
+
+      <figure>
+        <div class="fig-frame">
+          <svg viewBox="0 0 880 330" role="img" aria-label="A request passes through four gates in order: CSRF, authentication, authorization, then schema validation, before reaching the service, the transaction and PostgreSQL. Each gate has a labelled refusal exit downward: 403 csrf_header_required, 401 unauthenticated, 403 insufficient_role or caller_type_not_allowed, and 400 validation_failed.">
+            <defs>
+              <marker id="ar2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"></path>
+              </marker>
+            </defs>
+
+            <text x="4" y="22" fill="currentColor" font-size="11.5" font-family="ui-monospace, monospace" opacity=".7">REQUEST</text>
+
+            <!-- gates -->
+            <g font-size="12" font-family="inherit">
+              <rect x="4" y="36" width="150" height="54" rx="8" fill="none" stroke="currentColor" stroke-width="1.3"></rect>
+              <text x="79" y="58" text-anchor="middle" fill="currentColor" font-weight="600">1 &middot; CsrfGuard</text>
+              <text x="79" y="76" text-anchor="middle" fill="currentColor" font-size="10.5" opacity=".68">header + Origin</text>
+
+              <rect x="186" y="36" width="150" height="54" rx="8" fill="none" stroke="currentColor" stroke-width="1.3"></rect>
+              <text x="261" y="58" text-anchor="middle" fill="currentColor" font-weight="600">2 &middot; Authentication</text>
+              <text x="261" y="76" text-anchor="middle" fill="currentColor" font-size="10.5" opacity=".68">key or session</text>
+
+              <rect x="368" y="36" width="150" height="54" rx="8" fill="none" stroke="currentColor" stroke-width="1.3"></rect>
+              <text x="443" y="58" text-anchor="middle" fill="currentColor" font-weight="600">3 &middot; Authorization</text>
+              <text x="443" y="76" text-anchor="middle" fill="currentColor" font-size="10.5" opacity=".68">@Roles on the class</text>
+
+              <rect x="550" y="36" width="150" height="54" rx="8" fill="none" stroke="currentColor" stroke-width="1.3"></rect>
+              <text x="625" y="58" text-anchor="middle" fill="currentColor" font-weight="600">4 &middot; Zod schema</text>
+              <text x="625" y="76" text-anchor="middle" fill="currentColor" font-size="10.5" opacity=".68">.strict() parse</text>
+
+              <rect x="732" y="36" width="144" height="54" rx="8" fill="none" stroke="currentColor" stroke-width="1.6"></rect>
+              <text x="804" y="58" text-anchor="middle" fill="currentColor" font-weight="700">Service</text>
+              <text x="804" y="76" text-anchor="middle" fill="currentColor" font-size="10.5" opacity=".68">principal in hand</text>
+            </g>
+
+            <!-- forward arrows -->
+            <g stroke="currentColor" stroke-width="1.3" marker-end="url(#ar2)" fill="none">
+              <line x1="154" y1="63" x2="182" y2="63"></line>
+              <line x1="336" y1="63" x2="364" y2="63"></line>
+              <line x1="518" y1="63" x2="546" y2="63"></line>
+              <line x1="700" y1="63" x2="728" y2="63"></line>
+            </g>
+
+            <!-- refusal exits -->
+            <g stroke="currentColor" stroke-width="1.1" marker-end="url(#ar2)" fill="none" stroke-dasharray="4 3" opacity=".75">
+              <line x1="79" y1="90" x2="79" y2="126"></line>
+              <line x1="261" y1="90" x2="261" y2="126"></line>
+              <line x1="443" y1="90" x2="443" y2="126"></line>
+              <line x1="625" y1="90" x2="625" y2="126"></line>
+            </g>
+
+            <g font-size="10.5" font-family="ui-monospace, monospace" fill="currentColor" text-anchor="middle" opacity=".85">
+              <text x="79" y="142">403</text>
+              <text x="79" y="155">csrf_header_</text>
+              <text x="79" y="167">required</text>
+
+              <text x="261" y="142">401</text>
+              <text x="261" y="155">unauthenticated</text>
+
+              <text x="443" y="142">403</text>
+              <text x="443" y="155">insufficient_role</text>
+              <text x="443" y="167">caller_type_not_allowed</text>
+
+              <text x="625" y="142">400</text>
+              <text x="625" y="155">validation_failed</text>
+            </g>
+
+            <!-- transaction + db -->
+            <g font-size="12" font-family="inherit">
+              <rect x="368" y="200" width="332" height="62" rx="9" fill="none" stroke="currentColor" stroke-width="1.3"></rect>
+              <text x="534" y="222" text-anchor="middle" fill="currentColor" font-weight="600">ONE transaction</text>
+              <text x="534" y="240" text-anchor="middle" fill="currentColor" font-size="10.5" opacity=".68">advisory lock &middot; evaluate &middot; insert &middot; open review</text>
+
+              <rect x="732" y="200" width="144" height="62" rx="9" fill="none" stroke="currentColor" stroke-width="1.6"></rect>
+              <text x="804" y="226" text-anchor="middle" fill="currentColor" font-weight="700">PostgreSQL</text>
+              <text x="804" y="244" text-anchor="middle" fill="currentColor" font-size="10.5" opacity=".68">constraints decide ties</text>
+            </g>
+
+            <g stroke="currentColor" stroke-width="1.3" marker-end="url(#ar2)" fill="none">
+              <path d="M 804 90 L 804 160 L 534 160 L 534 196"></path>
+              <line x1="700" y1="231" x2="728" y2="231"></line>
+            </g>
+
+            <text x="4" y="300" fill="currentColor" font-size="11.5" opacity=".7">
+              Each gate answers from what it alone knows. Nothing downstream re-checks what an earlier gate settled.
+            </text>
+          </svg>
+        </div>
+        <figcaption>
+          The four gates are <strong>global</strong>, registered once in <code>app.module.ts</code>, and Nest runs them in
+          registration order. A route added tomorrow is protected by all four without anyone remembering to
+          decorate it &mdash; the decorators are for <em>opting out</em>, not in.
+        </figcaption>
+      </figure>
+
+      <div class="code">
+        <div class="code-head"><span class="path">apps/api/src/app.module.ts:87</span><span>global guards, in order</span></div>
+        <pre><span class="c">// Nest executes APP_GUARD providers in registration order.</span>
+{ provide: APP_GUARD, useClass: CsrfGuard },
+{ provide: APP_GUARD, useClass: AuthenticationGuard },
+{ provide: APP_GUARD, useClass: AuthorizationGuard },
+{ provide: APP_FILTER, useClass: HttpExceptionFilter },</pre>
+      </div>
+
+      <p>
+        CSRF runs <strong>first</strong>, before authentication resolves. That ordering is deliberate: the CSRF
+        check is a property of the <em>request</em>, not of the caller, so a request that could never be honoured
+        is refused without a database lookup and without a bcrypt comparison. It is also why a
+        state-changing request with no credential and no <code>x-limaz-client</code> header answers
+        <code>403</code> rather than <code>401</code>.
+      </p>
+
+      <div class="note">
+        <span class="note-label">A correction worth recording</span>
+        <p>
+          An independent QA pass reported that the <code>403</code> applies to <em>every</em> route. It does not &mdash;
+          <code>CsrfGuard</code> guards state-changing methods only, so a <code>GET</code> with no credential answers
+          <code>401</code> with or without the header. A safe method is not what CSRF protects against.
+        </p>
+      </div>
+
+      <h3>How the company is resolved &mdash; one helper, every query</h3>
+
+      <div class="code">
+        <div class="code-head"><span class="path">apps/api/src/common/tenant.ts:31</span><span>the tenant predicate</span></div>
+        <pre><span class="k">export function</span> tenantScope(principal: Principal): { companyId: string } {
+  <span class="k">if</span> (principal.companyId === <span class="k">null</span>) {
+    <span class="c">// A platform admin has no tenant of their own. Reaching here means a</span>
+    <span class="c">// company-scoped query ran on an admin's behalf without the admin naming</span>
+    <span class="c">// the company - which would silently have meant "no rows" or, worse, "all</span>
+    <span class="c">// rows". Admin endpoints take an explicit company id instead.</span>
+    <span class="k">throw new</span> ForbiddenException({ error: <span class="s">'tenant_required'</span>, ... });
+  }
+
+  <span class="k">return</span> { companyId: principal.companyId };
+}</pre>
+      </div>
+
+      <p>
+        It <strong>throws</strong> rather than returning an empty filter, and that is the whole point. An empty
+        filter means either &ldquo;no rows&rdquo; or &ldquo;all rows&rdquo; depending on how it is spread into a
+        <code>where</code> clause, and the second one is a cross-tenant leak that looks like working code.
+        Because there is exactly one helper, <code>grep tenantScope</code> finds every company-scoped query in
+        the codebase.
+      </p>
+
+      <div class="note warn">
+        <span class="note-label">The honest limit</span>
+        <p>
+          <strong>Nothing prevents a future query from omitting it.</strong> PostgreSQL row-level security would;
+          it was rejected for lack of Prisma support, the per-transaction <code>SET LOCAL</code> requirement, and
+          friction under transaction-mode pooling. Recorded as risk <strong>R-20</strong>, with a negative-control
+          test that fails when the predicate is removed.
+        </p>
+      </div>
+
+      <h3>The module map</h3>
+
+      <figure>
+        <div class="fig-frame">
+          <svg viewBox="0 0 880 420" role="img" aria-label="A layered module map. The entry layer holds the Next.js web app and the four caller types. The HTTP layer holds controllers for auth, expenses, reviews, policy, dashboard, admin and webhooks. The domain layer holds the expense submission service, policy evaluator, review resolution service and webhook intake and worker. The data layer holds PrismaService and PostgreSQL. Arrows show the webhook worker calling the same expense submission service the API controller uses.">
+            <defs>
+              <marker id="ar3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"></path>
+              </marker>
+            </defs>
+
+            <g font-family="ui-monospace, monospace" font-size="10.5" fill="currentColor" opacity=".6">
+              <text x="4" y="26">EDGE</text>
+              <text x="4" y="120">HTTP</text>
+              <text x="4" y="238">DOMAIN</text>
+              <text x="4" y="358">DATA</text>
+            </g>
+
+            <!-- edge -->
+            <g font-size="11.5" font-family="inherit">
+              <rect x="70" y="10" width="170" height="36" rx="7" fill="none" stroke="currentColor" stroke-width="1.2"></rect>
+              <text x="155" y="33" text-anchor="middle" fill="currentColor">apps/web (Next 16)</text>
+
+              <rect x="258" y="10" width="150" height="36" rx="7" fill="none" stroke="currentColor" stroke-width="1.2"></rect>
+              <text x="333" y="33" text-anchor="middle" fill="currentColor">company backend</text>
+
+              <rect x="426" y="10" width="150" height="36" rx="7" fill="none" stroke="currentColor" stroke-width="1.2"></rect>
+              <text x="501" y="33" text-anchor="middle" fill="currentColor">card provider</text>
+            </g>
+
+            <!-- http -->
+            <g font-size="11" font-family="ui-monospace, monospace">
+              <rect x="70" y="86" width="806" height="66" rx="8" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".55"></rect>
+              <rect x="84" y="100" width="96" height="38" rx="6" fill="none" stroke="currentColor" stroke-width="1.1"></rect>
+              <text x="132" y="124" text-anchor="middle" fill="currentColor">auth</text>
+              <rect x="192" y="100" width="110" height="38" rx="6" fill="none" stroke="currentColor" stroke-width="1.1"></rect>
+              <text x="247" y="124" text-anchor="middle" fill="currentColor">expenses</text>
+              <rect x="314" y="100" width="100" height="38" rx="6" fill="none" stroke="currentColor" stroke-width="1.1"></rect>
+              <text x="364" y="124" text-anchor="middle" fill="currentColor">reviews</text>
+              <rect x="426" y="100" width="92" height="38" rx="6" fill="none" stroke="currentColor" stroke-width="1.1"></rect>
+              <text x="472" y="124" text-anchor="middle" fill="currentColor">policy</text>
+              <rect x="530" y="100" width="104" height="38" rx="6" fill="none" stroke="currentColor" stroke-width="1.1"></rect>
+              <text x="582" y="124" text-anchor="middle" fill="currentColor">dashboard</text>
+              <rect x="646" y="100" width="92" height="38" rx="6" fill="none" stroke="currentColor" stroke-width="1.1"></rect>
+              <text x="692" y="124" text-anchor="middle" fill="currentColor">admin</text>
+              <rect x="750" y="100" width="112" height="38" rx="6" fill="none" stroke="currentColor" stroke-width="1.1"></rect>
+              <text x="806" y="124" text-anchor="middle" fill="currentColor">webhooks</text>
+            </g>
+
+            <!-- domain -->
+            <g font-size="11" font-family="ui-monospace, monospace">
+              <rect x="70" y="196" width="806" height="96" rx="8" fill="none" stroke="currentColor" stroke-width="1.2" opacity=".55"></rect>
+
+              <rect x="192" y="212" width="222" height="64" rx="7" fill="none" stroke="currentColor" stroke-width="1.8"></rect>
+              <text x="303" y="236" text-anchor="middle" fill="currentColor" font-weight="600">ExpenseSubmissionService</text>
+              <text x="303" y="256" text-anchor="middle" fill="currentColor" opacity=".65" font-size="10">the only write path</text>
+
+              <rect x="426" y="212" width="130" height="64" rx="7" fill="none" stroke="currentColor" stroke-width="1.1"></rect>
+              <text x="491" y="238" text-anchor="middle" fill="currentColor">PolicyEngine</text>
+              <text x="491" y="256" text-anchor="middle" fill="currentColor">Evaluator</text>
+
+              <rect x="568" y="212" width="130" height="64" rx="7" fill="none" stroke="currentColor" stroke-width="1.1"></rect>
+              <text x="633" y="238" text-anchor="middle" fill="currentColor">ReviewResolution</text>
+              <text x="633" y="256" text-anchor="middle" fill="currentColor">Service</text>
+
+              <rect x="710" y="212" width="152" height="64" rx="7" fill="none" stroke="currentColor" stroke-width="1.1"></rect>
+              <text x="786" y="238" text-anchor="middle" fill="currentColor">WebhookIntake</text>
+              <text x="786" y="256" text-anchor="middle" fill="currentColor">+ Worker</text>
+            </g>
+
+            <!-- data -->
+            <g font-size="11.5" font-family="inherit">
+              <rect x="70" y="326" width="390" height="44" rx="8" fill="none" stroke="currentColor" stroke-width="1.2"></rect>
+              <text x="265" y="353" text-anchor="middle" fill="currentColor">PrismaService &middot; @prisma/adapter-pg</text>
+
+              <rect x="478" y="326" width="398" height="44" rx="8" fill="none" stroke="currentColor" stroke-width="1.6"></rect>
+              <text x="677" y="353" text-anchor="middle" fill="currentColor" font-weight="600">PostgreSQL 17 &mdash; constraints, advisory locks</text>
+            </g>
+
+            <!-- key arrows -->
+            <g stroke="currentColor" stroke-width="1.4" marker-end="url(#ar3)" fill="none">
+              <line x1="247" y1="138" x2="280" y2="208"></line>
+              <path d="M 806 138 L 806 192"></path>
+              <path d="M 786 276 L 786 300 L 340 300 L 320 284" stroke-dasharray="5 3"></path>
+              <line x1="303" y1="276" x2="303" y2="322"></line>
+            </g>
+
+            <text x="330" y="314" fill="currentColor" font-size="10.5" font-family="inherit" opacity=".8">
+              the worker calls the SAME service &mdash; there is no second expense engine
+            </text>
+          </svg>
+        </div>
+        <figcaption>
+          The dashed arrow is the one that matters. A card webhook does not get its own path to the
+          database: the worker calls <code>ExpenseSubmissionService</code>, the identical service a company
+          backend reaches through <code>POST /v1/expenses</code>. One policy engine, one idempotency guarantee,
+          one review lifecycle.
+        </figcaption>
+      </figure>
+
+      <h3>What lives where</h3>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Concern</th><th>Path</th><th>The thing to read first</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>Guards, principal, tenancy</td><td><code>src/auth/</code>, <code>src/common/tenant.ts</code></td><td><code>tenantScope()</code></td></tr>
+            <tr><td>Submission + idempotency</td><td><code>src/expenses/expense-submission.service.ts</code></td><td>the single <code>$transaction</code></td></tr>
+            <tr><td>The rules</td><td><code>src/expenses/policy-engine.evaluator.ts</code></td><td>rule order and precedence</td></tr>
+            <tr><td>The frequency lock</td><td><code>src/expenses/frequency-lock.ts</code></td><td><code>pg_advisory_xact_lock</code></td></tr>
+            <tr><td>Review lifecycle</td><td><code>src/reviews/review-resolution.service.ts</code></td><td>the conditional <code>UPDATE</code></td></tr>
+            <tr><td>Webhook authentication</td><td><code>src/webhooks/webhook-intake.service.ts</code></td><td><code>authenticate()</code></td></tr>
+            <tr><td>Webhook crypto</td><td><code>src/webhooks/webhook-crypto.ts</code></td><td><code>signedPayload()</code></td></tr>
+            <tr><td>The queue worker</td><td><code>src/webhooks/webhook-worker.service.ts</code></td><td><code>claimOne()</code></td></tr>
+            <tr><td>Schema + constraints</td><td><code>prisma/schema.prisma</code></td><td>the <code>@@unique</code> lines</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+    <!-- ===================================================================
+         PART 03 - THE FIVE CYCLES
+         =================================================================== -->
+    <section class="part" id="cycles">
+      <div class="part-head">
+        <p class="part-num">Part 03</p>
+        <h2>The five cycles</h2>
+        <p>
+          Five paths carry everything this system does. Each one is traced here from the caller to the
+          committed row, with the code that makes the guarantee hold.
+        </p>
+      </div>
+
+      <!-- ---------------- CYCLE 1 ---------------- -->
+      <h3>Cycle 1 &mdash; Submission: from HTTP to a decided expense</h3>
+
+      <figure>
+        <div class="fig-frame">
+          <svg viewBox="0 0 880 440" role="img" aria-label="A sequence diagram of expense submission. The backend posts to the API. Guards resolve the company from the API key. One transaction then takes an advisory lock on company and employee, checks the idempotency constraint, evaluates the three policy rules, inserts the expense and rule hits, and opens a review only when the decision is REVIEW. The transaction commits and the API answers 201 with the decision and reasons.">
+            <defs>
+              <marker id="ar4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"></path>
+              </marker>
+            </defs>
+
+            <!-- lanes -->
+            <g font-size="11.5" font-family="inherit" font-weight="600">
+              <text x="60" y="18" text-anchor="middle" fill="currentColor">Backend</text>
+              <text x="230" y="18" text-anchor="middle" fill="currentColor">Guards</text>
+              <text x="440" y="18" text-anchor="middle" fill="currentColor">Submission service</text>
+              <text x="740" y="18" text-anchor="middle" fill="currentColor">PostgreSQL</text>
+            </g>
+
+            <g stroke="currentColor" stroke-width="1" opacity=".3">
+              <line x1="60" y1="28" x2="60" y2="412"></line>
+              <line x1="230" y1="28" x2="230" y2="412"></line>
+              <line x1="440" y1="28" x2="440" y2="412"></line>
+              <line x1="740" y1="28" x2="740" y2="412"></line>
+            </g>
+
+            <!-- transaction band -->
+            <rect x="330" y="96" width="470" height="252" rx="9" fill="none" stroke="currentColor" stroke-width="1.3" stroke-dasharray="6 4" opacity=".8"></rect>
+            <text x="340" y="114" fill="currentColor" font-size="10.5" font-family="ui-monospace, monospace" opacity=".8">BEGIN &mdash; one transaction</text>
+
+            <g stroke="currentColor" stroke-width="1.3" marker-end="url(#ar4)" fill="none">
+              <line x1="60" y1="48" x2="226" y2="48"></line>
+              <line x1="230" y1="78" x2="436" y2="78"></line>
+              <line x1="440" y1="136" x2="736" y2="136"></line>
+              <line x1="440" y1="180" x2="736" y2="180"></line>
+              <line x1="440" y1="224" x2="736" y2="224"></line>
+              <line x1="440" y1="268" x2="736" y2="268"></line>
+              <line x1="440" y1="312" x2="736" y2="312"></line>
+              <line x1="436" y1="378" x2="64" y2="378"></line>
+            </g>
+
+            <g font-size="11" font-family="inherit" fill="currentColor">
+              <text x="66" y="42">POST /v1/expenses + x-api-key</text>
+              <text x="236" y="72">company resolved from the key row</text>
+              <text x="446" y="130">pg_advisory_xact_lock(company, employee)</text>
+              <text x="446" y="174">is this externalId already stored?</text>
+              <text x="446" y="218">count in the frequency window</text>
+              <text x="446" y="262">INSERT expense + rule hits</text>
+              <text x="446" y="306">INSERT review &mdash; only when REVIEW</text>
+              <text x="70" y="372">201 &middot; decision, reasons, policy snapshot</text>
+            </g>
+
+            <text x="340" y="340" fill="currentColor" font-size="10.5" font-family="ui-monospace, monospace" opacity=".8">COMMIT &mdash; everything, or nothing</text>
+
+            <text x="4" y="404" fill="currentColor" font-size="11" opacity=".72">
+              The lock is held for the whole transaction and released by COMMIT or ROLLBACK &mdash; including a crash.
+            </text>
+            <text x="4" y="424" fill="currentColor" font-size="11" opacity=".72">
+              Nothing is observable to another request until COMMIT, so no caller ever sees a half-written expense.
+            </text>
+          </svg>
+        </div>
+        <figcaption>
+          One transaction covers the lock, the duplicate check, the evaluation, the insert and the review.
+          There is no window in which an expense exists without its rule hits, or a <code>REVIEW</code> decision
+          exists without a review row.
+        </figcaption>
+      </figure>
+
+      <h4>The three rules, and which one wins</h4>
+
+      <figure>
+        <div class="fig-frame">
+          <svg viewBox="0 0 880 250" role="img" aria-label="A decision flow. An expense is checked against the blocked category rule, the amount limit rule and the frequency rule. All rules are evaluated, every hit is recorded, and the severest outcome wins: REJECT beats REVIEW beats APPROVE.">
+            <defs>
+              <marker id="ar5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"></path>
+              </marker>
+            </defs>
+
+            <rect x="4" y="92" width="118" height="46" rx="8" fill="none" stroke="currentColor" stroke-width="1.4"></rect>
+            <text x="63" y="112" text-anchor="middle" fill="currentColor" font-size="12" font-weight="600">Expense</text>
+            <text x="63" y="128" text-anchor="middle" fill="currentColor" font-size="10" opacity=".65">+ policy snapshot</text>
+
+            <g font-size="11.5" font-family="inherit">
+              <rect x="190" y="14" width="210" height="52" rx="8" fill="none" stroke="currentColor" stroke-width="1.2"></rect>
+              <text x="202" y="36" fill="currentColor" font-weight="600">BLOCKED_CATEGORY</text>
+              <text x="202" y="53" fill="currentColor" font-size="10.5" opacity=".68">case- and space-insensitive</text>
+
+              <rect x="190" y="89" width="210" height="52" rx="8" fill="none" stroke="currentColor" stroke-width="1.2"></rect>
+              <text x="202" y="111" fill="currentColor" font-weight="600">AMOUNT_LIMIT</text>
+              <text x="202" y="128" fill="currentColor" font-size="10.5" opacity=".68">strictly greater than</text>
+
+              <rect x="190" y="164" width="210" height="52" rx="8" fill="none" stroke="currentColor" stroke-width="1.2"></rect>
+              <text x="202" y="186" fill="currentColor" font-weight="600">FREQUENCY</text>
+              <text x="202" y="203" fill="currentColor" font-size="10.5" opacity=".68">[spentAt &minus; N, spentAt]</text>
+            </g>
+
+            <g stroke="currentColor" stroke-width="1.2" marker-end="url(#ar5)" fill="none">
+              <path d="M 122 106 L 156 106 L 156 40 L 186 40"></path>
+              <line x1="122" y1="115" x2="186" y2="115"></line>
+              <path d="M 122 124 L 156 124 L 156 190 L 186 190"></path>
+              <path d="M 400 40 L 440 40 L 440 106 L 476 106"></path>
+              <line x1="400" y1="115" x2="476" y2="115"></line>
+              <path d="M 400 190 L 440 190 L 440 124 L 476 124"></path>
+            </g>
+
+            <rect x="480" y="80" width="150" height="70" rx="8" fill="none" stroke="currentColor" stroke-width="1.5"></rect>
+            <text x="555" y="104" text-anchor="middle" fill="currentColor" font-size="12" font-weight="600">severest wins</text>
+            <text x="555" y="122" text-anchor="middle" fill="currentColor" font-size="10.5" opacity=".68">every hit still</text>
+            <text x="555" y="136" text-anchor="middle" fill="currentColor" font-size="10.5" opacity=".68">recorded</text>
+
+            <g stroke="currentColor" stroke-width="1.2" marker-end="url(#ar5)" fill="none">
+              <path d="M 630 100 L 668 100 L 668 44 L 700 44"></path>
+              <line x1="630" y1="115" x2="700" y2="115"></line>
+              <path d="M 630 130 L 668 130 L 668 186 L 700 186"></path>
+            </g>
+
+            <g font-size="12" font-family="ui-monospace, monospace" font-weight="600">
+              <text x="706" y="48" fill="currentColor">REJECT</text>
+              <text x="706" y="119" fill="currentColor">REVIEW</text>
+              <text x="706" y="190" fill="currentColor">APPROVE</text>
+            </g>
+
+            <g font-size="10.5" font-family="inherit" fill="currentColor" opacity=".68">
+              <text x="780" y="48">final</text>
+              <text x="780" y="119">opens a review</text>
+              <text x="780" y="190">no review</text>
+            </g>
+
+            <text x="4" y="238" fill="currentColor" font-size="11" opacity=".72">
+              A rejected expense that ALSO broke the limit returns both reasons. Hiding the second one would
+              make the first fix look sufficient.
+            </text>
+          </svg>
+        </div>
+        <figcaption>
+          Every rule is evaluated even once a <code>REJECT</code> is certain, because the reasons are the product.
+          Precedence decides the single stored <code>decision</code>; it never decides what gets recorded.
+        </figcaption>
+      </figure>
+
+      <!-- ---------------- CYCLE 2 ---------------- -->
+      <h3>Cycle 2 &mdash; The same expense, submitted twice</h3>
+
+      <p>
+        Networks retry. A company backend that times out and sends the same expense again must not create
+        two. The guarantee is a database constraint, not application logic.
+      </p>
+
+      <div class="code">
+        <div class="code-head"><span class="path">apps/api/prisma/schema.prisma:298</span><span>the idempotency key</span></div>
+        <pre>@@unique([companyId, source, externalId])</pre>
+      </div>
+
+      <p>
+        Three columns, and each earns its place. <code>companyId</code> means two companies may use the same
+        reference without colliding. <code>externalId</code> is the client's own identifier. <code>source</code> is the
+        namespace &mdash; <code>API</code> or <code>CARD_WEBHOOK</code> &mdash; so a card transaction id can never collide
+        with a reference a backend chose.
+      </p>
+
+      <figure>
+        <div class="fig-frame">
+          <svg viewBox="0 0 880 280" role="img" aria-label="Two identical submissions race. Both begin transactions, both insert, and PostgreSQL's unique index lets exactly one commit. The loser receives error 23505, catches it, reads the winning row and answers 200 with duplicate true and the same expense id.">
+            <defs>
+              <marker id="ar6" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"></path>
+              </marker>
+            </defs>
+
+            <g font-size="11.5" font-weight="600" font-family="inherit">
+              <text x="64" y="18" text-anchor="middle" fill="currentColor">Request A</text>
+              <text x="64" y="160" text-anchor="middle" fill="currentColor">Request B</text>
+              <text x="620" y="18" text-anchor="middle" fill="currentColor">unique index</text>
+            </g>
+
+            <g font-size="11" font-family="ui-monospace, monospace">
+              <rect x="4" y="32" width="230" height="40" rx="7" fill="none" stroke="currentColor" stroke-width="1.2"></rect>
+              <text x="119" y="57" text-anchor="middle" fill="currentColor">INSERT ... externalId = X</text>
+
+              <rect x="4" y="174" width="230" height="40" rx="7" fill="none" stroke="currentColor" stroke-width="1.2"></rect>
+              <text x="119" y="199" text-anchor="middle" fill="currentColor">INSERT ... externalId = X</text>
+
+              <rect x="520" y="86" width="200" height="74" rx="9" fill="none" stroke="currentColor" stroke-width="1.7"></rect>
+              <text x="620" y="112" text-anchor="middle" fill="currentColor" font-size="11.5">companyId, source,</text>
+              <text x="620" y="128" text-anchor="middle" fill="currentColor" font-size="11.5">externalId</text>
+              <text x="620" y="148" text-anchor="middle" fill="currentColor" font-size="10.5" opacity=".7">one row wins</text>
+            </g>
+
+            <g stroke="currentColor" stroke-width="1.3" marker-end="url(#ar6)" fill="none">
+              <path d="M 234 52 L 380 52 L 380 104 L 516 104"></path>
+              <path d="M 234 194 L 380 194 L 380 142 L 516 142"></path>
+              <path d="M 720 104 L 790 104 L 790 52 L 836 52"></path>
+              <path d="M 720 142 L 790 142 L 790 194 L 836 194"></path>
+            </g>
+
+            <g font-size="11" font-family="inherit" fill="currentColor">
+              <text x="760" y="44" text-anchor="end">committed</text>
+              <text x="760" y="212" text-anchor="end">23505</text>
+            </g>
+
+            <g font-size="11.5" font-family="ui-monospace, monospace" font-weight="600">
+              <text x="842" y="56" fill="currentColor">201</text>
+              <text x="842" y="198" fill="currentColor">200</text>
+            </g>
+
+            <text x="4" y="246" fill="currentColor" font-size="11" opacity=".78">
+              The loser does NOT fail. It catches 23505, reads the row that won, and returns it with duplicate: true &mdash;
+            </text>
+            <text x="4" y="264" fill="currentColor" font-size="11" opacity=".78">
+              the same expense id and the same decision the winner got. Both callers see one consistent answer.
+            </text>
+          </svg>
+        </div>
+        <figcaption>
+          There is deliberately <strong>no</strong> check-then-insert. A pre-check loses the race when two requests
+          arrive at once: both <code>SELECT</code> and find nothing, both <code>INSERT</code>, and one raises
+          <code>23505</code> from a code path that was not expecting it &mdash; which is how this becomes a 500.
+          Eight simultaneous identical submissions produce exactly one row, and all eight responses name it.
+        </figcaption>
+      </figure>
+
+      <div class="note warn">
+        <span class="note-label">The third case</span>
+        <p>
+          Same <code>externalId</code>, <strong>different</strong> body is neither a retry nor a new expense. It is a
+          <code>409</code>, and the original expense is left exactly as it was. Silently accepting it would let a
+          client overwrite a decided expense by reusing a reference.
+        </p>
+      </div>
+
+      <!-- ---------------- CYCLE 3 ---------------- -->
+      <h3>Cycle 3 &mdash; Two managers click Approve at the same moment</h3>
+
+      <p>
+        The resolve path is one conditional <code>UPDATE</code>. There is no read first, so there is no window
+        between reading and writing for a second manager to slip into.
+      </p>
+
+      <div class="code">
+        <div class="code-head"><span class="path">apps/api/src/reviews/review-resolution.service.ts:107</span><span>the atomic claim</span></div>
+        <pre>UPDATE <span class="s">"reviews"</span>
+   SET state = <span class="s">'RESOLVED'</span>,
+       outcome = ${outcome}::<span class="s">"ReviewOutcome"</span>,
+       <span class="s">"resolvedByUserId"</span> = ${userId}::uuid,
+       <span class="s">"resolvedAt"</span> = resolution.at,
+       <span class="s">"updatedAt"</span> = resolution.at
+  FROM (SELECT clock_timestamp() AS at) AS resolution
+ WHERE <span class="s">"reviews"</span>.id = ${reviewId}::uuid
+   AND <span class="s">"reviews"</span>.<span class="s">"companyId"</span> = ${companyId}::uuid
+   AND <span class="s">"reviews"</span>.state = <span class="s">'OPEN'</span>      <span class="c">&lt;-- the whole race lives here</span>
+RETURNING <span class="s">"reviews"</span>.<span class="s">"expenseId"</span></pre>
+      </div>
+
+      <p>
+        <code>AND state = 'OPEN'</code> is the entire concurrency control. PostgreSQL serialises the two updates
+        on the row; the first sets <code>RESOLVED</code>, and the second then matches zero rows. The winner gets
+        <code>200</code>; the loser gets a <code>409</code> that <strong>names the decision that already happened</strong>,
+        so the manager learns what their colleague chose rather than just being told no.
+      </p>
+
+      <div class="note">
+        <span class="note-label">Two details worth defending</span>
+        <p>
+          <code>clock_timestamp()</code> is computed once in the <code>FROM</code> clause and written to both columns,
+          so <code>resolvedAt</code> and <code>updatedAt</code> cannot disagree &mdash; two separate calls would return two
+          different instants. And <code>updatedAt</code> is set explicitly because Prisma's <code>@updatedAt</code> is
+          applied by the client, which a raw statement bypasses; without it the column would silently keep
+          its creation value.
+        </p>
+      </div>
+
+      <p>
+        Zero rows updated is <strong>not</strong> automatically &ldquo;already resolved&rdquo;. It is one of four things &mdash;
+        no such review, another company's review, already resolved, or a genuine conflict &mdash; and they get
+        four different answers. Treating every zero-row update as a successful retry would report success
+        for a review that never existed.
+      </p>
+
+      <p>
+        The expense update rides in the <strong>same transaction</strong>, which answers the obvious follow-up:
+        what if the review updates and the expense does not? Nothing is observable to any other transaction
+        until <code>COMMIT</code>, so the state where a review is resolved while its expense is still pending
+        never exists. It only exists if the two writes are split across transactions.
+      </p>
+
+      <!-- ---------------- CYCLE 4 ---------------- -->
+      <h3>Cycle 4 &mdash; A card provider delivers a settled transaction</h3>
+
+      <figure>
+        <div class="fig-frame">
+          <svg viewBox="0 0 880 430" role="img" aria-label="The card webhook pipeline. The provider posts a signed request. The endpoint verifies the HMAC over the raw bytes and a timestamp, derives the company from the integration whose secret verified, stores the event in a PostgreSQL inbox and answers 202. A separate worker claims the event with FOR UPDATE SKIP LOCKED and calls the same expense submission service the API uses.">
+            <defs>
+              <marker id="ar7" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"></path>
+              </marker>
+            </defs>
+
+            <g font-size="11.5" font-family="inherit">
+              <rect x="4" y="60" width="150" height="56" rx="8" fill="none" stroke="currentColor" stroke-width="1.3"></rect>
+              <text x="79" y="84" text-anchor="middle" fill="currentColor" font-weight="600">Card provider</text>
+              <text x="79" y="102" text-anchor="middle" fill="currentColor" font-size="10.5" opacity=".68">retries until 2xx</text>
+
+              <rect x="212" y="40" width="226" height="96" rx="9" fill="none" stroke="currentColor" stroke-width="1.5"></rect>
+              <text x="325" y="62" text-anchor="middle" fill="currentColor" font-weight="700">Intake</text>
+              <text x="224" y="82" fill="currentColor" font-size="10.5">1. HMAC over timestamp + "." + RAW bytes</text>
+              <text x="224" y="99" fill="currentColor" font-size="10.5">2. timestamp inside the window</text>
+              <text x="224" y="116" fill="currentColor" font-size="10.5">3. company = whose secret verified</text>
+
+              <rect x="500" y="48" width="180" height="80" rx="9" fill="none" stroke="currentColor" stroke-width="1.5"></rect>
+              <text x="590" y="74" text-anchor="middle" fill="currentColor" font-weight="700">Inbox</text>
+              <text x="590" y="94" text-anchor="middle" fill="currentColor" font-size="10.5" opacity=".7">webhook_events</text>
+              <text x="590" y="112" text-anchor="middle" fill="currentColor" font-size="10.5" opacity=".7">status = PENDING</text>
+
+              <rect x="500" y="212" width="180" height="80" rx="9" fill="none" stroke="currentColor" stroke-width="1.3"></rect>
+              <text x="590" y="238" text-anchor="middle" fill="currentColor" font-weight="600">Worker</text>
+              <text x="590" y="258" text-anchor="middle" fill="currentColor" font-size="10.5" opacity=".7">FOR UPDATE</text>
+              <text x="590" y="274" text-anchor="middle" fill="currentColor" font-size="10.5" opacity=".7">SKIP LOCKED</text>
+
+              <rect x="724" y="212" width="152" height="80" rx="9" fill="none" stroke="currentColor" stroke-width="1.8"></rect>
+              <text x="800" y="244" text-anchor="middle" fill="currentColor" font-weight="700" font-size="11">ExpenseSubmission</text>
+              <text x="800" y="262" text-anchor="middle" fill="currentColor" font-weight="700" font-size="11">Service</text>
+              <text x="800" y="280" text-anchor="middle" fill="currentColor" font-size="10" opacity=".7">the same one</text>
+            </g>
+
+            <g stroke="currentColor" stroke-width="1.3" marker-end="url(#ar7)" fill="none">
+              <line x1="154" y1="88" x2="208" y2="88"></line>
+              <line x1="438" y1="88" x2="496" y2="88"></line>
+              <line x1="590" y1="128" x2="590" y2="208"></line>
+              <line x1="680" y1="252" x2="720" y2="252"></line>
+              <path d="M 325 136 L 325 170 L 120 170 L 90 128" stroke-dasharray="5 3"></path>
+            </g>
+
+            <text x="130" y="166" fill="currentColor" font-size="10.5" font-family="ui-monospace, monospace">202 Accepted</text>
+            <text x="446" y="80" fill="currentColor" font-size="10" font-family="inherit" opacity=".7">store</text>
+            <text x="600" y="172" fill="currentColor" font-size="10" font-family="inherit" opacity=".7">claim</text>
+
+            <!-- refusal -->
+            <g stroke="currentColor" stroke-width="1.1" marker-end="url(#ar7)" fill="none" stroke-dasharray="4 3" opacity=".8">
+              <line x1="325" y1="136" x2="325" y2="228"></line>
+            </g>
+            <g font-size="10.5" font-family="ui-monospace, monospace" fill="currentColor" text-anchor="middle">
+              <text x="325" y="246">401</text>
+              <text x="325" y="262">one shape for</text>
+              <text x="325" y="276">every cause</text>
+              <text x="325" y="296" font-family="inherit" opacity=".7">nothing stored</text>
+            </g>
+
+            <text x="4" y="338" fill="currentColor" font-size="11" opacity=".78">
+              The 202 is returned AFTER the event is durably committed. Accepting before storing would promise
+            </text>
+            <text x="4" y="356" fill="currentColor" font-size="11" opacity=".78">
+              delivery the system cannot keep: the provider stops retrying and the event is gone.
+            </text>
+            <text x="4" y="384" fill="currentColor" font-size="11" opacity=".78">
+              The body has no company field to trust. A delivery id selects which secret to try; it proves nothing
+            </text>
+            <text x="4" y="402" fill="currentColor" font-size="11" opacity=".78">
+              on its own, because only the holder of that secret can produce a signature that verifies.
+            </text>
+          </svg>
+        </div>
+        <figcaption>
+          Two phases on purpose: accept-and-store is fast and never runs business logic; the worker does the
+          work. The provider's retry contract is satisfied by the first phase alone.
+        </figcaption>
+      </figure>
+
+      <h4>Why the signature covers the raw bytes</h4>
+
+      <div class="code">
+        <div class="code-head"><span class="path">apps/api/src/webhooks/webhook-crypto.ts:179</span><span>the signed material</span></div>
+        <pre><span class="k">export function</span> signedPayload(timestamp: string, rawBody: Buffer): Buffer {
+  <span class="k">return</span> Buffer.concat([Buffer.from(<span class="s">`${timestamp}.`</span>, <span class="s">'utf8'</span>), rawBody]);
+}
+
+<span class="k">export function</span> computeSignature(secret, timestamp, rawBody): string {
+  <span class="k">return</span> createHmac(<span class="s">'sha256'</span>, secret)
+    .update(signedPayload(timestamp, rawBody))
+    .digest(<span class="s">'hex'</span>);
+}</pre>
+      </div>
+
+      <div class="note bad">
+        <span class="note-label">The mistake this avoids</span>
+        <p>
+          <code>JSON.parse</code> followed by <code>JSON.stringify</code> <strong>is not the identity function.</strong> It
+          normalises whitespace, drops insignificant formatting, re-encodes unicode escapes and renders
+          <code>1.0</code> as <code>1</code>. A verifier built on the parsed object fails every pretty-printed delivery
+          &mdash; and, far worse, can be made to verify a body that differs from the one the application then
+          acts on. The app is booted with <code>rawBody: true</code> so the exact received bytes survive.
+        </p>
+      </div>
+
+      <p>
+        The separator earns its place too. Without the dot, timestamp <code>1</code> with body <code>23{...}</code>
+        and timestamp <code>12</code> with body <code>3{...}</code> would produce identical signed strings.
+      </p>
+
+      <h4>Two deduplication layers, and why one is not enough</h4>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Layer</th><th>Constraint</th><th>Stops</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Delivery</td>
+              <td><code>@@unique([companyId, providerEventId])</code></td>
+              <td>The provider sending <em>the same event</em> again after a timeout</td>
+            </tr>
+            <tr>
+              <td>Effect</td>
+              <td><code>@@unique([companyId, source, externalId])</code></td>
+              <td>Two <em>different</em> events describing one transaction becoming two expenses</td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        A retry is the same event id. A re-settlement notice is a different event id for the same
+        transaction id. Only the second layer catches the second case, and only the first layer lets the
+        system answer a redelivery without doing the work again.
+      </p>
+
+      <h4>Claiming an event without two workers taking it</h4>
+
+      <div class="code">
+        <div class="code-head"><span class="path">apps/api/src/webhooks/webhook-worker.service.ts:238</span><span>claimOne()</span></div>
+        <pre>UPDATE webhook_events
+SET status = <span class="s">'PROCESSING'</span>,
+    <span class="s">"claimedAt"</span> = now(),
+    attempts = attempts + 1        <span class="c">-- incremented AT CLAIM TIME</span>
+WHERE id = (
+  SELECT id FROM webhook_events
+  WHERE (status = <span class="s">'PENDING'</span> AND <span class="s">"nextAttemptAt"</span> &lt;= now())
+     OR (status = <span class="s">'PROCESSING'</span>
+         AND <span class="s">"claimedAt"</span> &lt; now() - make_interval(secs =&gt; ${leaseSeconds}))
+  ORDER BY <span class="s">"nextAttemptAt"</span> ASC, <span class="s">"receivedAt"</span> ASC
+  FOR UPDATE SKIP LOCKED           <span class="c">-- a competitor steps over, never waits</span>
+  LIMIT 1
+)
+RETURNING ...</pre>
+      </div>
+
+      <p>
+        The row is locked by the <code>SELECT</code> and changed by the surrounding <code>UPDATE</code> in the
+        <strong>same statement</strong>. A second worker's <code>SKIP LOCKED</code> steps over it instead of waiting, so
+        both workers make progress and neither gets the same event.
+      </p>
+
+      <p>
+        <code>attempts</code> is incremented when the event is <em>claimed</em>, not when it completes. An event that
+        crashes the worker every time still advances toward its bound; counting on completion would retry
+        it forever. The second <code>OR</code> branch is crash recovery: a <code>PROCESSING</code> row whose lease has
+        expired is reclaimed, with no heartbeat and no external supervisor.
+      </p>
+
+      <div class="note good">
+        <span class="note-label">What happens if the worker dies mid-expense</span>
+        <p>
+          The expense may already be committed. The lease expires, another attempt claims the event, and
+          calls the same submission service &mdash; which finds the <code>externalId</code> already stored and returns
+          the existing expense. <strong>No new code was written for this.</strong> It is the idempotency guarantee
+          from Cycle 2, and it is the real reason the worker calls the same service instead of its own.
+        </p>
+      </div>
+
+      <!-- ---------------- CYCLE 5 ---------------- -->
+      <h3>Cycle 5 &mdash; Issuing and retiring an API key</h3>
+
+      <figure>
+        <div class="fig-frame">
+          <svg viewBox="0 0 880 210" role="img" aria-label="The API key lifecycle. Issue shows the raw key exactly once with a no-store header and stores only its SHA-256 hash. Rotate issues a replacement and leaves the old key working for a 24 hour grace window. Revoke stops a key on the very next request. Authentication checks status and expiry inside the SQL WHERE clause.">
+            <defs>
+              <marker id="ar8" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6.5" markerHeight="6.5" orient="auto-start-reverse">
+                <path d="M 0 0 L 10 5 L 0 10 z" fill="currentColor"></path>
+              </marker>
+            </defs>
+
+            <g font-size="11.5" font-family="inherit">
+              <rect x="4" y="34" width="176" height="60" rx="8" fill="none" stroke="currentColor" stroke-width="1.3"></rect>
+              <text x="92" y="58" text-anchor="middle" fill="currentColor" font-weight="600">Issue</text>
+              <text x="92" y="76" text-anchor="middle" fill="currentColor" font-size="10.5" opacity=".68">shown once, no-store</text>
+
+              <rect x="248" y="34" width="176" height="60" rx="8" fill="none" stroke="currentColor" stroke-width="1.3"></rect>
+              <text x="336" y="58" text-anchor="middle" fill="currentColor" font-weight="600">Rotate</text>
+              <text x="336" y="76" text-anchor="middle" fill="currentColor" font-size="10.5" opacity=".68">old key: 24h grace</text>
+
+              <rect x="492" y="34" width="176" height="60" rx="8" fill="none" stroke="currentColor" stroke-width="1.3"></rect>
+              <text x="580" y="58" text-anchor="middle" fill="currentColor" font-weight="600">Revoke</text>
+              <text x="580" y="76" text-anchor="middle" fill="currentColor" font-size="10.5" opacity=".68">next request fails</text>
+
+              <rect x="4" y="128" width="664" height="48" rx="8" fill="none" stroke="currentColor" stroke-width="1.6"></rect>
+              <text x="336" y="157" text-anchor="middle" fill="currentColor" font-size="11.5">
+                stored as SHA-256 &mdash; status and expiry are IN the WHERE clause, so a revoked key cannot be returned at all
+              </text>
+            </g>
+
+            <g stroke="currentColor" stroke-width="1.3" marker-end="url(#ar8)" fill="none">
+              <line x1="180" y1="64" x2="244" y2="64"></line>
+              <line x1="424" y1="64" x2="488" y2="64"></line>
+              <line x1="92" y1="94" x2="92" y2="124"></line>
+              <line x1="336" y1="94" x2="336" y2="124"></line>
+              <line x1="580" y1="94" x2="580" y2="124"></line>
+            </g>
+
+            <g font-size="11" font-family="inherit" fill="currentColor" opacity=".8">
+              <text x="692" y="58">An integration</text>
+              <text x="692" y="74">swaps keys with</text>
+              <text x="692" y="90">no downtime.</text>
+            </g>
+
+            <text x="4" y="200" fill="currentColor" font-size="11" opacity=".72">
+              Measured in the test suite at 24.000 hours from the moment of rotation.
+            </text>
+          </svg>
+        </div>
+        <figcaption>
+          Lifecycle state is part of the authentication query rather than a check performed after the row is
+          fetched. A post-fetch check has already loaded a revoked credential into the process, and is one
+          early return away from honouring it.
+        </figcaption>
+      </figure>
+    </section>
+    <!-- ===================================================================
+         PART 04 - DECISIONS AND ALTERNATIVES
+         =================================================================== -->
+    <section class="part" id="decisions">
+      <div class="part-head">
+        <p class="part-num">Part 04</p>
+        <h2>Decisions, and what they beat</h2>
+        <p>
+          Every choice below had at least one reasonable alternative. What follows is what was considered,
+          what was picked, and the reason &mdash; including the cases where the rejected option is genuinely
+          better on some axis and was turned down anyway.
+        </p>
+      </div>
+
+      <h3>1 &mdash; Two columns for the outcome, not one</h3>
+
+      <div class="choice">
+        <div class="opt">
+          <h5>One <code>status</code> column <span class="verdict">rejected</span></h5>
+          <p>Simpler schema. But a manager approving a flagged expense overwrites the fact that it was ever flagged &mdash; the audit question &ldquo;did the policy catch this?&rdquo; becomes unanswerable.</p>
+        </div>
+        <div class="opt">
+          <h5>A status history table <span class="verdict">rejected</span></h5>
+          <p>Fully general, and the right answer for a workflow with many transitions. Here there are exactly two writers and one transition, so it buys generality nobody asked for and makes the common read a join.</p>
+        </div>
+        <div class="opt picked">
+          <h5><code>decision</code> + <code>status</code> <span class="verdict">chosen</span></h5>
+          <p>The machine's verdict is immutable history; the human outcome is separate. Both are one column read, and the UI can show &ldquo;Policy: Review&rdquo; beside &ldquo;Approved&rdquo; without explaining a contradiction.</p>
+        </div>
+      </div>
+
+      <h3>2 &mdash; Money as an integer of minor units</h3>
+
+      <div class="choice">
+        <div class="opt">
+          <h5><code>float</code> / <code>double</code> <span class="verdict">rejected</span></h5>
+          <p>0.1 + 0.2 is not 0.3. A comparison against a limit is exactly where that bites, and the error is silent.</p>
+        </div>
+        <div class="opt">
+          <h5><code>NUMERIC(12,2)</code> <span class="verdict">rejected</span></h5>
+          <p>Correct arithmetic, and a defensible choice. It arrives in JavaScript as a string or a <code>Decimal</code> object, so every comparison needs a library and every serialisation needs a decision.</p>
+        </div>
+        <div class="opt picked">
+          <h5><code>INTEGER</code> minor units <span class="verdict">chosen</span></h5>
+          <p>SAR 125.00 is <code>12500</code>. Exact, comparable with <code>&gt;</code>, and JSON-safe. The ceiling is the <code>int4</code> limit &mdash; SAR 21,474,836.47 for one expense &mdash; which is a stated limit, not an accident.</p>
+        </div>
+      </div>
+
+      <h3>3 &mdash; API keys hashed, webhook secrets encrypted</h3>
+
+      <p>
+        These look inconsistent and are not. The difference is what the server has to <em>do</em> with the value.
+      </p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th></th><th>API key</th><th>Webhook signing secret</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>What the caller sends</td><td>the key itself</td><td>a MAC computed <em>with</em> the secret</td></tr>
+            <tr><td>To verify, the server needs</td><td>a one-way digest to compare</td><td><strong>the key material itself</strong></td></tr>
+            <tr><td>So it is stored as</td><td>SHA-256 hash</td><td>AES-256-GCM ciphertext</td></tr>
+            <tr><td>Database dump alone is enough?</td><td>No</td><td>No &mdash; the key lives outside the database</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note warn">
+        <span class="note-label">Stated plainly</span>
+        <p>
+          <strong>Encryption is weaker than hashing, and this is recorded as risk R-35 rather than presented as
+          equivalent.</strong> No digest can stand in for HMAC key material &mdash; verification means recomputing
+          the MAC, which requires the secret. The mitigation is that an attacker needs <em>both</em> the database
+          and <code>WEBHOOK_ENCRYPTION_KEY</code>, and the upgrade path is an external KMS where the key never
+          enters the process.
+        </p>
+        <p>
+          The company id is used as the <strong>additional authenticated data</strong>, so a secret copied from one
+          company's row into another's fails to decrypt rather than silently working &mdash; which is the
+          injection somebody with database write access would actually try.
+        </p>
+      </div>
+
+      <h3>4 &mdash; Serialising the frequency rule</h3>
+
+      <div class="choice">
+        <div class="opt">
+          <h5><code>SERIALIZABLE</code> isolation <span class="verdict">rejected</span></h5>
+          <p>Correct, and it would also catch anomalies nobody anticipated. It pushes retry handling into every caller and penalises the whole transaction, including reads that never needed it.</p>
+        </div>
+        <div class="opt">
+          <h5>An application mutex <span class="verdict">rejected</span></h5>
+          <p>Works on one process. Two API containers each hold their own, and the guarantee silently disappears the day the deployment scales out.</p>
+        </div>
+        <div class="opt picked">
+          <h5><code>pg_advisory_xact_lock</code> <span class="verdict">chosen</span></h5>
+          <p>Scoped to <em>(company, employee)</em> so unrelated traffic never contends, held by the database so every container shares it, and released by COMMIT, ROLLBACK or a crash.</p>
+        </div>
+      </div>
+
+      <div class="code">
+        <div class="code-head"><span class="path">apps/api/src/expenses/frequency-lock.ts:64</span><span>two arguments, not one string</span></div>
+        <pre>await tx.$executeRaw<span class="s">`SELECT pg_advisory_xact_lock(hashtext(${companyId}), hashtext(${employeeId}))`</span>;</pre>
+      </div>
+
+      <p>
+        Two 32-bit arguments give a 2<sup>64</sup> key space and need no separator.
+        <code>hashtext(a || ':' || b)</code> would give 32 bits &mdash; a birthday collision at roughly 77,000
+        distinct keys &mdash; and would need a separator that cannot occur in an employee id. A collision here
+        can only make two unrelated pairs wait on each other; it cannot produce a wrong decision, because
+        every query inside the lock still filters on the real ids. <strong>The lock decides who waits, never who
+        sees what.</strong>
+      </p>
+
+      <p>
+        The transaction-scoped variant matters too. <code>pg_advisory_lock</code> is released only by an explicit
+        unlock, so a crash would leak it onto a pooled connection and poison that connection for every later
+        request &mdash; a latent outage under PgBouncer.
+      </p>
+
+      <h3>5 &mdash; The frequency window looks only backwards</h3>
+
+      <div class="choice">
+        <div class="opt">
+          <h5>Re-evaluate affected expenses <span class="verdict">rejected</span></h5>
+          <p>Every insert could rewrite N decisions and open reviews retroactively. Decisions stop being stable, which breaks the audit trail the rest of the system is built to keep.</p>
+        </div>
+        <div class="opt">
+          <h5>Symmetric window <code>[t&minus;60, t+60]</code> <span class="verdict">rejected</span></h5>
+          <p>Semantically wrong: it would count two expenses 118 minutes apart as being &ldquo;within 60 minutes&rdquo;.</p>
+        </div>
+        <div class="opt">
+          <h5>Sliding sub-window search <span class="verdict">deferred</span></h5>
+          <p>Correct. Needs a scan of a two-hour band and reasoning about every 60-minute sub-window containing <em>t</em>. Recorded as the upgrade path.</p>
+        </div>
+        <div class="opt picked">
+          <h5><code>[spentAt &minus; N, spentAt]</code> <span class="verdict">chosen</span></h5>
+          <p>Both bounds inclusive, measured on when the money was spent. Simple, stable, and explainable to the manager reading the rule hit.</p>
+        </div>
+      </div>
+
+      <div class="note bad">
+        <span class="note-label">The limitation this creates &mdash; risk R-11, open</span>
+        <p>
+          An expense whose <code>spentAt</code> is earlier than one already decided does not see it, so it can be
+          auto-approved although it is logically the fourth in its own window. This was described for a long
+          time as a <strong>back-dating</strong> risk, which understated it: the real trigger is
+          <strong>arrival order differing from <code>spentAt</code> order</strong>, and the commonest cause is ordinary
+          concurrency. A burst of ten simultaneous submissions against a limit of three was measured
+          auto-approving <strong>three to seven</strong>, varying by run.
+        </p>
+        <p>
+          The advisory lock does not help here and is not claimed to. Serialising writers does not change
+          what each one is allowed to <em>see</em>, and a serialised transaction still evaluates only backwards.
+        </p>
+      </div>
+
+      <h3>6 &mdash; 404 rather than 403 across tenants</h3>
+
+      <div class="choice">
+        <div class="opt">
+          <h5><code>403 Forbidden</code> <span class="verdict">rejected</span></h5>
+          <p>Semantically honest &mdash; the row exists and you may not have it. That honesty is the problem: 403 versus 404 is an existence oracle, so walking a list of ids counts a competitor's expenses.</p>
+        </div>
+        <div class="opt picked">
+          <h5><code>404 Not Found</code> <span class="verdict">chosen</span></h5>
+          <p>One answer for &ldquo;no such row&rdquo; and &ldquo;not yours&rdquo;. The id never reaches a query without the tenant predicate, so the server genuinely does not know which case it was.</p>
+        </div>
+      </div>
+
+      <p>
+        The UI wording matches the guarantee rather than softening it:
+        <em>&ldquo;It does not exist, or it belongs to another company.&rdquo;</em>
+      </p>
+
+      <h3>7 &mdash; Opaque session tokens, not JWTs</h3>
+
+      <div class="choice">
+        <div class="opt">
+          <h5>JWT <span class="verdict">rejected</span></h5>
+          <p>Stateless and fashionable. It cannot be revoked before it expires, which is exactly what this system needs when an account is compromised or a manager leaves.</p>
+        </div>
+        <div class="opt picked">
+          <h5>Opaque token, SHA-256 at rest <span class="verdict">chosen</span></h5>
+          <p>A row that can be deleted. Absolute expiry is checked <em>in SQL</em>, so an expired session cannot be loaded at all. <code>HttpOnly</code>, <code>Secure</code>, <code>SameSite=Lax</code>, first-party.</p>
+        </div>
+      </div>
+
+      <h3>8 &mdash; Same-origin proxy instead of CORS</h3>
+
+      <p>
+        There is deliberately no <code>app.enableCors()</code>. CORS is not a lock the server applies; it is
+        permission the server <em>grants</em>. With no CORS headers the browser's default &mdash; deny &mdash; stands,
+        which is the strictest posture available, and enabling CORS could only ever open access that is
+        currently closed.
+      </p>
+
+      <p>
+        It is not needed because the browser never makes a cross-origin request: Next.js proxies
+        <code>/api/*</code> server-side, so from the browser's point of view everything is same-origin. A test
+        asserts that <strong>no</strong> <code>access-control-allow-origin</code> header is ever sent, because its presence
+        would mean the deployment is no longer same-origin.
+      </p>
+
+      <h3>9 &mdash; The administrator types the first password</h3>
+
+      <div class="choice">
+        <div class="opt">
+          <h5>Server-generated password <span class="verdict">rejected</span></h5>
+          <p>The machinery already exists for API keys. But the response then carries a plaintext credential, needing <code>no-store</code>, a one-time reveal and a copy affordance &mdash; and a lost response leaves an account nobody can sign in to.</p>
+        </div>
+        <div class="opt picked">
+          <h5>Administrator chooses it <span class="verdict">chosen</span></h5>
+          <p>Somebody carries the first password out of band either way, because this deployment sends no email. This way the response carries <strong>no credential at all</strong> &mdash; nothing to leak into a proxy log or an error reporter.</p>
+        </div>
+      </div>
+
+      <p>
+        Two bounds, each for a reason. At least 12 characters, because this endpoint <em>sets</em> policy for a
+        new credential &mdash; unlike login, whose bound is loose so &ldquo;too short&rdquo; cannot confirm an address
+        exists. At most <strong>72 bytes</strong>, because bcrypt hashes 72 and silently discards the rest: accepting
+        a longer passphrase would create an account with far less entropy than the person believes they set.
+        Bytes, not characters, because that is what bcrypt counts &mdash; a 40-character Arabic passphrase is
+        already over the limit in UTF-8.
+      </p>
+
+      <h3>10 &mdash; A PostgreSQL inbox, not a message broker</h3>
+
+      <div class="choice">
+        <div class="opt">
+          <h5>Process synchronously <span class="verdict">rejected</span></h5>
+          <p>The assessment asks for asynchronous processing, and for good reason: policy evaluation inside the provider's request means a slow evaluation becomes a delivery timeout and a retry storm.</p>
+        </div>
+        <div class="opt">
+          <h5>Redis / SQS / RabbitMQ <span class="verdict">rejected</span></h5>
+          <p>The right answer at volume. Here it adds a second durable store to operate, and a new failure mode: the event is committed to the queue but not to the database, or the reverse.</p>
+        </div>
+        <div class="opt picked">
+          <h5>A table, claimed with <code>SKIP LOCKED</code> <span class="verdict">chosen</span></h5>
+          <p>One store, so acceptance and durability are the same commit. Honest about what it is not: polling rather than push, no priorities, no dead-letter queue beyond <code>status = FAILED</code>.</p>
+        </div>
+      </div>
+
+      <div class="note">
+        <span class="note-label">What happens when the queue is down</span>
+        <p>
+          There is no separate queue to be down. The inbox is a table in the same database that acceptance
+          writes to, so if it is unavailable the <code>202</code> is never sent &mdash; and the provider, which retries
+          until it gets a 2xx, keeps the event and sends it again. <strong>Nothing is lost by failing loudly at
+          the front door.</strong> The dangerous design is the opposite one: answer 202, then try to enqueue.
+        </p>
+      </div>
+
+      <h3>11 &mdash; The gap that was explained rather than built</h3>
+
+      <div class="note bad">
+        <span class="note-label">Risk R-38, open and deliberate</span>
+        <p>
+          The assessment asks how you would find events the provider <strong>never delivered</strong>. This system
+          cannot, on its own &mdash; an event that never arrived leaves no trace here, and nothing in the
+          repository reconciles against the provider. Three approaches are ranked rather than implemented:
+        </p>
+        <ol>
+          <li><strong>Id-gap detection</strong> &mdash; only works if event ids are sequential, and <code>evt_8f2c1</code> gives no reason to think they are.</li>
+          <li><strong>A reconciliation job against a provider listing API</strong> &mdash; the real answer. It needs an endpoint this integration does not have, and inventing one would be fabricating a contract.</li>
+          <li><strong>A liveness alert on companies that have gone quiet</strong> &mdash; cheap, weak, and genuinely useful.</li>
+        </ol>
+      </div>
+    </section>
+    <!-- ===================================================================
+         PART 05 - THE HARD QUESTIONS
+         =================================================================== -->
+    <section class="part" id="questions">
+      <div class="part-head">
+        <p class="part-num">Part 05</p>
+        <h2>The hard questions</h2>
+        <p>
+          The things a reviewer actually asks, each with what the system does and the test that proves it.
+          Every answer here was executed against the running stack, not inferred from the code.
+        </p>
+      </div>
+
+      <h3>Getting at another company's data</h3>
+
+      <details class="qa" open>
+        <summary>I put another company's expense id in the URL. What do I get?</summary>
+        <div class="qa-body">
+          <p>
+            <strong>404, never 403</strong> &mdash; and nothing was read. The id goes into the <code>WHERE</code> clause
+            beside <code>companyId</code>, so the query returns no rows rather than returning a row that is then
+            checked. A post-fetch check has already pulled another tenant's data into the process and is one
+            refactor away from leaking it.
+          </p>
+          <p>
+            The same holds for review ids, key ids and company ids &mdash; including through the admin path
+            selector. Revoking another company's key through <em>your</em> company's URL is a 404, and the key
+            still works afterwards.
+          </p>
+        </div>
+      </details>
+
+      <details class="qa">
+        <summary>What if I put <code>companyId</code> in the request body?</summary>
+        <div class="qa-body">
+          <p>
+            <strong>400, and nothing is created.</strong> Not &ldquo;parsed and ignored&rdquo; &mdash; refused at the parse,
+            because every write schema is <code>.strict()</code> and <code>companyId</code> is not a declared field.
+          </p>
+          <p>
+            The distinction is the point. &ldquo;Ignored&rdquo; is a property of <em>today's code</em>: it holds only as
+            long as nobody spreads the parsed object into a Prisma <code>create</code>. &ldquo;Refused&rdquo; is a property
+            of the <em>schema</em>, and it holds whatever the service does next. The same applies to
+            <code>role</code> and <code>decision</code>.
+          </p>
+        </div>
+      </details>
+
+      <details class="qa">
+        <summary>Can I search my way into another company's records?</summary>
+        <div class="qa-body">
+          <p>
+            No. The search term is an extra <code>AND</code> clause; the tenant predicate is a separate clause on
+            the same query and always present. A search that matches another company's merchant returns
+            nothing.
+          </p>
+          <p>
+            One real bug lived here and is fixed: <code>%</code> and <code>_</code> were being passed straight into the
+            <code>ILIKE</code> pattern, so <code>?q=%</code> returned <em>every expense in your own company</em>. Never a
+            leak &mdash; the tenant predicate still applied &mdash; but wrong results that looked right.
+          </p>
+          <div class="code">
+            <div class="code-head"><span class="path">apps/api/src/expenses/expense-query.service.ts:185</span><span>the fix</span></div>
+            <pre><span class="k">function</span> escapeLikePattern(term: string): string {
+  <span class="k">return</span> term.replace(/[\\%_]/gu, (character) =&gt; <span class="s">`\\${character}`</span>);
+}</pre>
+          </div>
+          <p>
+            Backslash first, so a literal one cannot consume the character after it. The regression test does
+            not assert &ldquo;fewer rows&rdquo; &mdash; a broken escape gives that too. It submits one merchant containing
+            a literal <code>%</code> and another containing a literal <code>_</code>, and asserts each term finds
+            <strong>its own</strong> row and <strong>not the other's</strong>, which is precisely what a wildcard cannot do.
+          </p>
+        </div>
+      </details>
+
+      <h3>Sending more than one request at a time</h3>
+
+      <details class="qa" open>
+        <summary>Eight identical submissions arrive at once. How many expenses exist?</summary>
+        <div class="qa-body">
+          <p>
+            <strong>Exactly one</strong>, and all eight responses name it. One request gets <code>201</code>; the other
+            seven get <code>200</code> with <code>duplicate: true</code>, the same expense id and the same decision.
+          </p>
+          <p>
+            The guarantee is the unique index, not application logic. The losers catch PostgreSQL error
+            <code>23505</code>, read the winning row and return it. There is no pre-check to lose the race.
+          </p>
+        </div>
+      </details>
+
+      <details class="qa">
+        <summary>Two managers approve the same review simultaneously.</summary>
+        <div class="qa-body">
+          <p>
+            <strong>Exactly one winner, every trial.</strong> The winner gets <code>200</code>. The loser gets a
+            <code>409</code> that <em>names the decision that already happened</em>, and the expense is unchanged.
+          </p>
+          <p>
+            One conditional <code>UPDATE</code> with <code>AND state = 'OPEN'</code> does it. PostgreSQL serialises the
+            two updates on the row, so the second matches zero rows. No read-then-write window exists for a
+            second manager to slip into.
+          </p>
+        </div>
+      </details>
+
+      <details class="qa">
+        <summary>Ten expenses from one employee arrive at once, against a limit of three.</summary>
+        <div class="qa-body">
+          <p>This one has two honest answers, and they differ.</p>
+          <p>
+            <strong>Identical <code>spentAt</code>:</strong> exactly <strong>3 approve, 7 review</strong> &mdash;
+            deterministically, every run. That outcome is only reachable if the ten transactions serialised,
+            so the result itself is the evidence that the advisory lock works. A negative control removes the
+            lock and watches all ten approve.
+          </p>
+          <p>
+            <strong>Skewed <code>spentAt</code>, milliseconds apart:</strong> <strong>three to seven</strong> approve, varying by
+            run. This is risk R-11, and it is a real gap, not a flaky test. Arrival order and <code>spentAt</code>
+            order diverge, and evaluation only looks backwards.
+          </p>
+          <p>
+            The test for the second case deliberately asserts <strong>no approval count</strong> &mdash; that number
+            depends on lock order, which is undetermined, so asserting it would be flaky by construction.
+            It asserts the two things true on every interleaving: the earliest <code>spentAt</code> always
+            approves however late it arrives, and no expense's recorded count can exceed its rank in
+            <code>spentAt</code> order. That bound <em>is</em> the limitation, written as an invariant.
+          </p>
+        </div>
+      </details>
+
+      <details class="qa">
+        <summary>Six deliveries of the same webhook event arrive together.</summary>
+        <div class="qa-body">
+          <p>
+            <strong>One event row, one expense.</strong> The delivery-layer unique index on
+            <code>(companyId, providerEventId)</code> admits one; the rest are recognised as redeliveries and
+            answered without doing the work again.
+          </p>
+          <p>
+            And the same transaction id under <em>two different</em> event ids also becomes one expense &mdash;
+            caught by the second layer, the expense-level idempotency key. That is why one layer would not
+            have been enough.
+          </p>
+        </div>
+      </details>
+
+      <h3>Attacking the webhook</h3>
+
+      <details class="qa">
+        <summary>I captured a valid delivery. Can I replay it?</summary>
+        <div class="qa-body">
+          <p>
+            Two independent answers. The <strong>timestamp window</strong> bounds the replay in both directions &mdash;
+            including a request signed far in the future, which a past-only bound would leave replayable
+            until that date arrives. And even inside the window, the <strong>delivery-layer unique index</strong>
+            recognises the event id and creates nothing.
+          </p>
+        </div>
+      </details>
+
+      <details class="qa">
+        <summary>I changed the amount but kept the signature.</summary>
+        <div class="qa-body">
+          <p>
+            <code>401</code>, and nothing is stored. The HMAC covers the raw bytes, so any change to the body
+            changes the expected signature.
+          </p>
+          <p>
+            The subtler version of this attack is re-serialising the <em>same</em> object with different
+            whitespace. That is also refused &mdash; which is the test that proves verification is over the raw
+            bytes rather than over a parsed object.
+          </p>
+        </div>
+      </details>
+
+      <details class="qa">
+        <summary>I signed it correctly, but with another company's secret.</summary>
+        <div class="qa-body">
+          <p>
+            <code>401</code>. The delivery id selects which secret to try; it proves nothing on its own. Only
+            the holder of <em>that</em> secret can produce a signature that verifies, and the company is then
+            taken from the integration whose secret verified &mdash; never from the payload, which has no
+            company field at all.
+          </p>
+        </div>
+      </details>
+
+      <details class="qa">
+        <summary>Can I tell which check failed?</summary>
+        <div class="qa-body">
+          <p>
+            No. Twelve distinct refusal paths &mdash; wrong, malformed, empty and missing signatures; missing
+            timestamp and delivery headers; unknown delivery id; timestamps two hours either side; a
+            non-numeric timestamp; another company's secret; another company's delivery id &mdash; all answer
+            <code>401</code> with an <strong>identical response body</strong>.
+          </p>
+          <p>
+            Timing is handled too: an unknown delivery id is compared against a dummy HMAC so the refusal
+            takes the same work as a real one, and signatures are compared in constant time after a shape
+            check &mdash; the shape check first, because <code>timingSafeEqual</code> throws on a length mismatch,
+            which would itself be an oracle.
+          </p>
+        </div>
+      </details>
+
+      <details class="qa">
+        <summary>Can a browser be tricked into calling the webhook endpoint?</summary>
+        <div class="qa-body">
+          <p>
+            The endpoint is the one route carrying <code>@WebhookExempt()</code>, which turns off CSRF. That is
+            safe for the reason CSRF exists: it protects a credential the <strong>browser attaches
+            automatically</strong>, and this route reads none. A cross-site request with a cookie attached is a
+            <code>401</code>, because the cookie is never read and a browser cannot produce the signature.
+          </p>
+          <p>
+            A test asserts that exactly one route carries the decorator, so the exemption cannot quietly
+            spread to a route that <em>does</em> read the session.
+          </p>
+        </div>
+      </details>
+
+      <h3>Malformed and hostile input</h3>
+
+      <details class="qa">
+        <summary>Can I make it return a 500?</summary>
+        <div class="qa-body">
+          <p>
+            Not with input, as far as has been tested. Thirty malformed submissions, eleven malformed policy
+            updates, eight malformed company creations, five malformed manager creations, six malformed
+            webhook payloads, four corrupt pagination cursors, four out-of-range limits, a 12&nbsp;MB body, a
+            wrong content type and truncated JSON. <strong>No 500 was produced by any input.</strong>
+          </p>
+          <p>
+            One case used to break this and is worth admitting: an oversized body returned <code>500</code> on
+            <em>every</em> endpoint, and had done since the expense API was built. <code>body-parser</code> raises a
+            rejection carrying a 413 that is not an <code>HttpException</code>, so the catch-all filter flattened
+            it. It was found by a webhook size test and confirmed against <code>POST /v1/expenses</code>. It now
+            answers <code>413 payload_too_large</code>.
+          </p>
+        </div>
+      </details>
+
+      <details class="qa">
+        <summary>SQL injection in the search box?</summary>
+        <div class="qa-body">
+          <p>
+            The term is a bound parameter and is matched as the literal text it is. There is no string-built
+            SQL anywhere in the codebase; the few raw statements are tagged templates where every value is a
+            parameter.
+          </p>
+          <p>
+            Worth separating from the wildcard bug above: that was never injection. Binding a value stops it
+            being <em>SQL</em>; it does not stop it being <em>pattern syntax</em> inside a <code>LIKE</code>.
+          </p>
+        </div>
+      </details>
+
+      <h3>Operations</h3>
+
+      <details class="qa">
+        <summary>What survives a restart?</summary>
+        <div class="qa-body">
+          <p>
+            Everything written by a user. Verified from a clean clone: companies, a manager provisioned
+            through the API, accepted webhook events, a resolved expense still <code>APPROVED</code>, the
+            company's policy unchanged, and the stored signing secret still verifying a fresh signed
+            delivery after the stack came back.
+          </p>
+          <p>The seed re-runs idempotently rather than doubling anything.</p>
+        </div>
+      </details>
+
+      <details class="qa">
+        <summary>The worker dies halfway through an event.</summary>
+        <div class="qa-body">
+          <p>
+            The lease expires, another attempt claims the row, and the submission service finds the
+            <code>externalId</code> already stored and returns the existing expense. One expense, no new code for
+            the crash case.
+          </p>
+          <p>
+            This is <strong>at-least-once processing with idempotent effects</strong>. Exactly-once delivery is not
+            claimed, because it is not achievable across a network boundary &mdash; what is achievable is that
+            repeated processing has the same effect as processing once.
+          </p>
+        </div>
+      </details>
+
+      <details class="qa">
+        <summary>Is the login rate limited?</summary>
+        <div class="qa-body">
+          <p>
+            <strong>No.</strong> Fifteen consecutive wrong passwords all answer <code>401</code> with no throttling and
+            no lockout, and the sixteenth correct attempt succeeds. Recorded as risk <strong>R-19</strong>, accepted
+            and out of scope.
+          </p>
+          <p>
+            The partial mitigation is bcrypt at cost 10 &mdash; roughly 100&nbsp;ms per attempt, so one attacker
+            manages about ten per second per connection &mdash; and generic errors that reveal nothing about
+            which half of the pair was wrong. A distributed attempt is unaffected.
+          </p>
+        </div>
+      </details>
+
+      <details class="qa">
+        <summary>Is there a Content-Security-Policy?</summary>
+        <div class="qa-body">
+          <p>
+            <strong>Not a real one, and the header that exists must not be mistaken for one.</strong> The web tier
+            sends <code>Content-Security-Policy: frame-ancestors 'none'</code> &mdash; one directive. It governs who
+            may frame the page, not what may execute inside it, and it does nothing for script injection.
+            Risk <strong>R-18</strong> is unchanged and says so explicitly.
+          </p>
+          <p>
+            The framing directive was added for a real gap: the session cookie is <code>SameSite=Lax</code>, which
+            blocks a cross-site POST but <em>not</em> a framed top-level GET, so the dashboard could be loaded in
+            an invisible iframe with a decoy over a one-click Approve. That is risk <strong>R-39</strong>, now
+            mitigated.
+          </p>
+        </div>
+      </details>
+    </section>
+    <!-- ===================================================================
+         PART 06 - WHERE THE CODE LIVES
+         =================================================================== -->
+    <section class="part" id="codemap">
+      <div class="part-head">
+        <p class="part-num">Part 06</p>
+        <h2>Where the code lives</h2>
+        <p>
+          Each guarantee in this guide is one file away. These are the exact places to look, and the lines
+          that carry the weight.
+        </p>
+      </div>
+
+      <h3>The repository, at the level that matters</h3>
+
+      <div class="code">
+        <div class="code-head"><span class="path">npm workspaces monorepo</span><span>two apps, one database</span></div>
+        <pre>apps/api/                     NestJS 11 &middot; the whole domain
+  prisma/schema.prisma        8 tables, 7 enums, 5 hand-written CHECK constraints
+  prisma/migrations/          applied by the entrypoint, never by hand
+  prisma/seed/                two companies with DIFFERENT policies
+  src/
+    app.module.ts             the four global guards, in order
+    auth/                     guards, principal, session + API key
+    common/tenant.ts          tenantScope() - one helper, every scoped query
+    expenses/                 submission, the policy engine, the advisory lock
+    reviews/                  the conditional UPDATE and its four zero-row cases
+    policy/  dashboard/       read paths
+    admin/                    companies, keys, managers, webhook provisioning
+    webhooks/                 intake, crypto, the inbox worker
+    simulator/                sandbox only, behind an explicit flag
+  test/                       619 tests &middot; 534 of them against real PostgreSQL
+
+apps/web/                     Next 16 App Router &middot; React 19 &middot; Tailwind 4
+  app/api/[...path]/route.ts  the same-origin proxy (ADR-008)
+  app/dashboard/              manager workspace
+  app/admin/                  platform administration
+
+scripts/                      acceptance, fresh install, contrast, webhook sender,
+                              security headers, the black-box QA cycles
+docs/                         ADRs, risks, traceability, test matrices, this guide</pre>
+      </div>
+
+      <h3>The eight places a guarantee is enforced</h3>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Guarantee</th><th>Enforced by</th><th>File</th></tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>A company sees only its own data</td>
+              <td><code>tenantScope()</code> in every <code>where</code></td>
+              <td><code>src/common/tenant.ts:31</code></td>
+            </tr>
+            <tr>
+              <td>One expense per reference</td>
+              <td>unique index + <code>23505</code> catch</td>
+              <td><code>prisma/schema.prisma:298</code></td>
+            </tr>
+            <tr>
+              <td>The frequency rule can't be raced</td>
+              <td><code>pg_advisory_xact_lock</code></td>
+              <td><code>src/expenses/frequency-lock.ts:64</code></td>
+            </tr>
+            <tr>
+              <td>One review, one resolver</td>
+              <td><code>AND state = 'OPEN'</code></td>
+              <td><code>src/reviews/review-resolution.service.ts:107</code></td>
+            </tr>
+            <tr>
+              <td>A review can't outlive its expense's tenant</td>
+              <td>composite FK <code>(expenseId, companyId)</code></td>
+              <td><code>prisma/schema.prisma:374</code></td>
+            </tr>
+            <tr>
+              <td>A webhook body can't be swapped</td>
+              <td>HMAC over <code>rawBody</code></td>
+              <td><code>src/webhooks/webhook-crypto.ts:179</code></td>
+            </tr>
+            <tr>
+              <td>Two workers can't take one event</td>
+              <td><code>FOR UPDATE SKIP LOCKED</code></td>
+              <td><code>src/webhooks/webhook-worker.service.ts:238</code></td>
+            </tr>
+            <tr>
+              <td>A search term isn't pattern syntax</td>
+              <td><code>escapeLikePattern()</code></td>
+              <td><code>src/expenses/expense-query.service.ts:185</code></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <h3>The four negative controls</h3>
+
+      <p>
+        A passing test proves the code does something. It does not prove the mechanism is why. For the four
+        guarantees the assessment actually grades, there is a test that <strong>removes the mechanism and
+        watches the failure reappear</strong>.
+      </p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Remove this</th><th>And this happens</th></tr>
+          </thead>
+          <tbody>
+            <tr><td>the tenant predicate</td><td>a read returns another company's rows</td></tr>
+            <tr><td>the unique index</td><td>concurrent retries create two expenses</td></tr>
+            <tr><td>the advisory lock</td><td>all ten concurrent submissions auto-approve</td></tr>
+            <tr><td><code>AND state = 'OPEN'</code></td><td>both managers &ldquo;win&rdquo; the same review</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <p>
+        They refuse to run unless <code>current_database()</code> is <code>limaz_test</code>, because a test whose job
+        is to break a guarantee must never be able to point at a real database.
+      </p>
+
+      <h3>What a reviewer can run, and what it proves</h3>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr><th>Command</th><th>Proves</th><th>Result</th></tr>
+          </thead>
+          <tbody>
+            <tr><td><code>npm test --workspaces</code></td><td>the whole suite</td><td>649 passed</td></tr>
+            <tr><td><code>bash scripts/verify-f00.sh</code> &hellip; <code>f02-1</code></td><td>acceptance against a rebuilt stack</td><td>18 &middot; 11 &middot; 16 &middot; 18</td></tr>
+            <tr><td><code>bash scripts/verify-fresh-install.sh</code></td><td>a clean clone works, and survives a restart</td><td>38 / 38</td></tr>
+            <tr><td><code>node scripts/qa-cycles/run-all.mjs</code></td><td>an independent black-box pass over HTTP</td><td>198 / 198</td></tr>
+            <tr><td><code>bash scripts/check-security-headers.sh</code></td><td>the response headers of R-39 and R-40</td><td>6 / 6</td></tr>
+            <tr><td><code>node scripts/send-card-webhook.mjs</code></td><td>a real signed delivery, signed outside this codebase</td><td>202</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="note warn">
+        <span class="note-label">Run them one at a time</span>
+        <p>
+          The API suite holds a PostgreSQL advisory lock on <code>limaz_test</code> for its duration, so two
+          runs cannot destroy each other's database. If it refuses, it names the process holding the lock
+          and prints the exact command to clear it.
+        </p>
+      </div>
+
+      <h3>What this system does not claim</h3>
+
+      <ul>
+        <li><strong>No automated frontend interaction tests</strong> (R-23). Browser behaviour is verified by hand and recorded as such, never reported as a passing test.</li>
+        <li><strong>No load testing.</strong> The scaling answer is architectural, and is labelled as reasoning rather than measurement.</li>
+        <li><strong>No Content-Security-Policy</strong> for script injection (R-18). The header that exists carries <code>frame-ancestors</code> only.</li>
+        <li><strong>No rate limiting</strong> on login or per API key (R-19).</li>
+        <li><strong>No reconciliation</strong> against the card provider (R-38) &mdash; explained in Part 04 rather than built.</li>
+        <li><strong>No audit log</strong> of administrative actions. <code>createdAt</code>, <code>rotatedAt</code> and <code>secretVersion</code> make the <em>fact</em> recoverable; who did it is not recorded.</li>
+        <li><strong>No zero-risk claim.</strong> Thirteen limitations are open in the risk register, each with what it costs and what would close it.</li>
+      </ul>
+
+      <div class="note">
+        <span class="note-label">Where to read further</span>
+        <p>
+          <code>README.md</code> for the full tour and the eight architecture answers &middot;
+          <code>docs/risks.md</code> for all forty risk entries &middot;
+          <code>docs/adr/</code> for the decisions in Part 04 as they were made &middot;
+          <code>docs/requirements-traceability.md</code> for the clause-by-clause mapping &middot;
+          <code>AI_LOG.md</code> for sixty-seven recorded defects, including the ones that were my own mistakes.
+        </p>
+      </div>
+    </section>
+
+    <footer class="end">
+      <p>
+        Built against <code>main</code> at commit <code>92812b1</code> &middot; tags <code>v1.0.0-core</code> (the mandatory
+        assessment, standing alone) and <code>v1.1.0-bonus</code> (with the card webhook).
+        Screenshots captured from the running system on 21 November 2026 at 1400&times;950 and 390&times;844.
+      </p>
+      <p>
+        Every number in this guide was measured rather than estimated. Where something is not built, it
+        says so.
+      </p>
+    </footer>
+  </main>
+</div>

@@ -1651,8 +1651,9 @@ during my own verification.
 
 | | |
 |---|---|
+| **[`docs/guide/index.html`](docs/guide/index.html)** | **the visual walkthrough** - every screen, every request cycle, the diagrams, and the alternatives each decision beat. Open it in a browser |
 | [`docs/requirements-traceability.md`](docs/requirements-traceability.md) | every assessment requirement → implementation → evidence → status |
-| [`docs/risks.md`](docs/risks.md) | 37 risks, each with the evidence behind its status |
+| [`docs/risks.md`](docs/risks.md) | 40 risks, each with the evidence behind its status |
 | [`docs/features/F11-manager-provisioning.md`](docs/features/F11-manager-provisioning.md) | manager provisioning, and why the password is typed rather than generated |
 | [`docs/features/F12-card-webhook.md`](docs/features/F12-card-webhook.md) | the card webhook bonus in full: the contract, the nine architecture decisions, and what is not built |
 | [`docs/adr/`](docs/adr/) | the eleven decisions, with the alternatives rejected |
