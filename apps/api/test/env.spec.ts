@@ -9,6 +9,9 @@ describe('parseEnv', () => {
     NODE_ENV: 'test',
     API_PORT: '3001',
     DATABASE_URL: 'postgresql://user:pw@localhost:5432/db?schema=public',
+    // Required in every environment from F12 onwards. See the schema for why
+    // it has no default and why that is deliberate.
+    WEBHOOK_ENCRYPTION_KEY: 'bGltYXotdGVzdC13ZWJob29rLWVuYy1rZXktMzJieXQ=',
   } satisfies NodeJS.ProcessEnv;
 
   it('accepts a valid environment and returns typed values', () => {
@@ -21,17 +24,22 @@ describe('parseEnv', () => {
   });
 
   it('applies defaults for optional variables', () => {
-    const env = parseEnv({ DATABASE_URL: validEnv.DATABASE_URL });
+    const env = parseEnv({
+      DATABASE_URL: validEnv.DATABASE_URL,
+      WEBHOOK_ENCRYPTION_KEY: validEnv.WEBHOOK_ENCRYPTION_KEY,
+    });
 
     expect(env.NODE_ENV).toBe('development');
     expect(env.API_PORT).toBe(3001);
   });
 
   it('rejects a missing DATABASE_URL and names it', () => {
-    expect(() => parseEnv({ NODE_ENV: 'test' })).toThrow(EnvValidationError);
+    expect(() =>
+      parseEnv({ NODE_ENV: 'test', WEBHOOK_ENCRYPTION_KEY: validEnv.WEBHOOK_ENCRYPTION_KEY }),
+    ).toThrow(EnvValidationError);
 
     try {
-      parseEnv({ NODE_ENV: 'test' });
+      parseEnv({ NODE_ENV: 'test', WEBHOOK_ENCRYPTION_KEY: validEnv.WEBHOOK_ENCRYPTION_KEY });
       fail('expected parseEnv to throw');
     } catch (error) {
       expect(error).toBeInstanceOf(EnvValidationError);

@@ -55,6 +55,28 @@ services:
       SESSION_TTL_HOURS: ${SESSION_TTL_HOURS:-8}
       COOKIE_SECURE: ${COOKIE_SECURE:-true}
       BCRYPT_COST: ${BCRYPT_COST:-10}
+      # F12 card webhook. The value below is a DEVELOPMENT key, published
+      # deliberately so that one `docker compose up` still starts
+      # everything on a fresh clone - the same reason this repository
+      # publishes development passwords and API keys.
+      #
+      # It protects nothing real: it encrypts signing secrets for companies
+      # that only exist in a database you seeded yourself. The env SCHEMA
+      # has no default, so a deployment that does not set the variable
+      # refuses to start rather than falling back to this.
+      #
+      # Override it in .env for anything you care about:
+      #   WEBHOOK_ENCRYPTION_KEY=$(node -e "console.log(require('crypto').randomBytes(32).toString('base64'))")
+      WEBHOOK_ENCRYPTION_KEY: ${WEBHOOK_ENCRYPTION_KEY:-bGltYXotZGV2ZWxvcG1lbnQtd2ViaG9vay1rZXktMzI=}
+      WEBHOOK_TOLERANCE_SECONDS: ${WEBHOOK_TOLERANCE_SECONDS:-300}
+      WEBHOOK_MAX_ATTEMPTS: ${WEBHOOK_MAX_ATTEMPTS:-5}
+      WEBHOOK_CLAIM_LEASE_SECONDS: ${WEBHOOK_CLAIM_LEASE_SECONDS:-60}
+      WEBHOOK_POLL_INTERVAL_MS: ${WEBHOOK_POLL_INTERVAL_MS:-1000}
+      WEBHOOK_WORKER_ENABLED: ${WEBHOOK_WORKER_ENABLED:-true}
+      # This compose file IS the review stack, so the sandbox is on. The
+      # schema defaults it to false, so a deployment that says nothing gets
+      # the safe answer.
+      SANDBOX_SIMULATOR_ENABLED: ${SANDBOX_SIMULATOR_ENABLED:-true}
       # EXPLICIT opt-in. This compose file IS the development and review stack,
       # so it asks for the seed by name. A real deployment never sets this, and
       # both the entrypoint and the seed script refuse without it.

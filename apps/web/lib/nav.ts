@@ -1,4 +1,4 @@
-import { FileText, Home, Building2, ScrollText, Settings } from 'lucide-react';
+import { FileText, Home, Building2, Inbox, CreditCard, ScrollText, Settings } from 'lucide-react';
 import type { UserRole } from './auth-shared';
 
 export interface NavItem {
@@ -35,6 +35,15 @@ const MANAGER_NAV: readonly NavItem[] = [
  */
 const ADMIN_NAV: readonly NavItem[] = [
   { label: 'Companies', href: '/admin', Icon: Building2 },
+  // F12. Both are real destinations with real data behind them - the rule
+  // above still holds: nothing is listed that does not work.
+  //
+  // The simulator link is shown even when SANDBOX_SIMULATOR_ENABLED is off,
+  // and the page then says so in words. Hiding it would make a deliberate
+  // deployment decision look like a missing feature, and the API refuses the
+  // endpoint either way - the link is not what protects it.
+  { label: 'Payment simulator', href: '/admin/simulator', Icon: CreditCard },
+  { label: 'Webhook events', href: '/admin/webhook-events', Icon: Inbox },
 ];
 
 /**

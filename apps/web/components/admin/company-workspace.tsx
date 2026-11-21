@@ -391,8 +391,8 @@ function CreateCompanyDialog({
             <p className="text-xs text-pretty text-text-secondary">
               The frequency rule starts at 3 expenses per 60 minutes and nothing is blocked. The
               company&rsquo;s own manager can change all of that afterwards.{' '}
-              <strong className="text-text">No manager account is created</strong> — that is a
-              separate step this version does not automate.
+              <strong className="text-text">No manager account is created here</strong> — add one
+              on the company&rsquo;s page next, so somebody can review what its policy flags.
             </p>
 
             <div className="flex flex-col gap-2 sm:flex-row sm:justify-end">

@@ -12,6 +12,8 @@ import { HealthModule } from './health/health.module';
 import { PolicyModule } from './policy/policy.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ReviewsModule } from './reviews/reviews.module';
+import { SimulatorModule } from './simulator/simulator.module';
+import { WebhooksModule } from './webhooks/webhooks.module';
 
 /**
  * The guards are registered GLOBALLY and in this order. Both facts are
@@ -35,6 +37,14 @@ import { ReviewsModule } from './reviews/reviews.module';
  *
  * Nest executes APP_GUARD providers in registration order.
  */
+// Built once and passed by reference, not called twice.
+//
+// `ExpensesModule.withEvaluator()` returns a NEW dynamic module every call,
+// so calling it again for the webhook pipeline would give that pipeline its
+// own `ExpenseSubmissionService`. Harmless today - the service is stateless -
+// and exactly the shape of mistake that ends with two policy engines.
+const expenses = ExpensesModule.withEvaluator({ useClass: PolicyEngineEvaluator });
+
 @Module({
   imports: [
     ConfigModule,
@@ -45,7 +55,7 @@ import { ReviewsModule } from './reviews/reviews.module';
     // naming a policy evaluator, so the endpoint and the decision engine
     // arrive together or not at all - there is no state in which
     // POST /v1/expenses exists and cannot decide anything.
-    ExpensesModule.withEvaluator({ useClass: PolicyEngineEvaluator }),
+    expenses,
     // F05: the manager review lifecycle. An ordinary module - unlike expenses
     // it has no dependency that had to exist before the routes could be
     // published.
@@ -60,6 +70,18 @@ import { ReviewsModule } from './reviews/reviews.module';
     // tenant-scoped - an administrator has no tenant, and the company id
     // arrives in the path as a selector AFTER the role has been verified.
     AdminModule,
+    // F12: the card webhook bonus. It imports ExpensesModule for the SAME
+    // ExpenseSubmissionService a company backend reaches, so a card
+    // transaction goes through the identical policy evaluation,
+    // idempotency guarantee and review lifecycle. There is no second
+    // engine anywhere.
+    WebhooksModule.forExpenses(expenses),
+    // F12: the sandbox simulator and the webhook event history. Separate
+    // from AdminModule even though its routes sit under /v1/admin, because
+    // a production deployment switches the simulator OFF - a module
+    // boundary that matches the lifecycle makes "what does production
+    // actually expose?" answerable by reading this list.
+    SimulatorModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: CsrfGuard },

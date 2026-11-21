@@ -1,4 +1,4 @@
-import type { ApiKey, Company } from '@prisma/client';
+import type { ApiKey, Company, UserRole } from '@prisma/client';
 
 /**
  * The shapes the admin endpoints return.
@@ -120,5 +120,58 @@ export function toCompanySummary(row: CompanyRow, activeApiKeys: number): Compan
     currency: row.currency,
     createdAt: row.createdAt.toISOString(),
     activeApiKeys,
+  };
+}
+
+// -----------------------------------------------------------------------------
+// Managers (F11)
+// -----------------------------------------------------------------------------
+
+/**
+ * What an administrator may see about a company's manager.
+ *
+ * Built field by field, like every other shape in this file, and here the
+ * reason is the sharpest one in the codebase: `User` carries `passwordHash`,
+ * and a spread would publish it. A bcrypt hash is not a usable credential, but
+ * it is exactly what an offline attacker needs to confirm a guess, and no
+ * management operation requires returning one. It is in no response, and the
+ * `select` in `ManagerAdminService` does not even read it.
+ *
+ * There is no `lastLoginAt` and no account status, because neither is recorded
+ * anywhere in this system. Inventing a column to make the panel look more
+ * complete would be a fabricated metric (the F08 lesson about key last-use).
+ */
+export interface ManagerSummary {
+  readonly id: string;
+  readonly email: string;
+  readonly displayName: string;
+  /** Always `MANAGER`. Present so the UI never has to assume it. */
+  readonly role: 'MANAGER';
+  readonly createdAt: string;
+}
+
+type ManagerRow = {
+  id: string;
+  email: string;
+  displayName: string;
+  role: UserRole;
+  createdAt: Date;
+};
+
+export function toManagerSummary(row: ManagerRow): ManagerSummary {
+  // Narrowed by a check rather than a cast. Every caller either filters on
+  // `role: 'MANAGER'` or writes that literal, so this cannot fire - and if a
+  // future query widens and starts returning an administrator, it fails here
+  // loudly instead of labelling that account "MANAGER" in the UI.
+  if (row.role !== 'MANAGER') {
+    throw new Error(`toManagerSummary received a ${row.role} row`);
+  }
+
+  return {
+    id: row.id,
+    email: row.email,
+    displayName: row.displayName,
+    role: row.role,
+    createdAt: row.createdAt.toISOString(),
   };
 }

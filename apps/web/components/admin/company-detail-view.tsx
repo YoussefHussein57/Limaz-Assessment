@@ -12,6 +12,8 @@ import { adminKeys, fetchCompany } from '@/lib/admin-queries';
 import { ApiError, userMessage } from '@/lib/api-error';
 import { formatDateTime, formatMoney } from '@/lib/format';
 import { ApiKeyPanel } from './api-key-panel';
+import { ManagerPanel } from './manager-panel';
+import { WebhookIntegrationPanel } from './webhook-integration-panel';
 
 /**
  * One company, from the administrator side.
@@ -101,20 +103,34 @@ export function CompanyDetailView({ companyId }: { companyId: string }) {
         The most actionable thing on the page, so it is at the top rather than
         buried. A company with no manager cannot sign in - nobody can review
         its flagged expenses, and they simply accumulate.
+
+        Until F11 this said the same thing and offered no way out, because
+        provisioning meant writing a row by hand (R-32). It now names the
+        panel that fixes it, three cards down, so the warning ends somewhere.
       */}
       {company.managerCount === 0 ? (
         <div className="mb-4">
-          <Alert tone="warning" title="This company has no manager account">
-            Its backend can submit expenses, but nobody can sign in to review the ones the policy
-            flags. Creating manager accounts is not automated in this version — a password would
-            have to be invented or an invitation system built, and neither is in scope.
+          <Alert tone="warning" title="Nobody can sign in for this company yet">
+            Its backend can submit expenses, but every expense the policy flags will wait
+            unreviewed. Add a manager below to finish setting the company up.
           </Alert>
         </div>
       ) : null}
 
       <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_320px] lg:items-start">
         <div className="flex flex-col gap-4">
+          {/*
+            Managers first, API keys second. That is the order a company is
+            actually set up in: the key only matters once somebody can look at
+            what it submits.
+          */}
+          <ManagerPanel companyId={company.id} />
+
           <ApiKeyPanel companyId={company.id} />
+
+          {/* F12. After the keys, because a card integration is a second way
+              in rather than the primary one. */}
+          <WebhookIntegrationPanel companyId={company.id} />
 
           <Card>
             <CardHeader

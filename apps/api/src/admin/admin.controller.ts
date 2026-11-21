@@ -15,8 +15,20 @@ import type { Principal } from '../auth/principal.types';
 import { assertUuid } from '../common/uuid';
 import { ApiKeyAdminService } from './api-key-admin.service';
 import { CompanyAdminService } from './company-admin.service';
-import type { ApiKeySummary, CompanyDetail, CompanyPage, IssuedApiKey } from './admin.types';
-import { createCompanySchema, listCompaniesSchema } from './dto/admin.dto';
+import { ManagerAdminService } from './manager-admin.service';
+import type {
+  ApiKeySummary,
+  CompanyDetail,
+  CompanyPage,
+  IssuedApiKey,
+  ManagerSummary,
+} from './admin.types';
+import { createCompanySchema, createManagerSchema, listCompaniesSchema } from './dto/admin.dto';
+import type {
+  ProvisionedWebhookIntegration,
+  WebhookIntegrationState,
+} from '../webhooks/webhook-integration.service';
+import { WebhookIntegrationService } from '../webhooks/webhook-integration.service';
 
 /**
  * Platform administration.
@@ -55,6 +67,8 @@ export class AdminController {
   constructor(
     private readonly companies: CompanyAdminService,
     private readonly apiKeys: ApiKeyAdminService,
+    private readonly managers: ManagerAdminService,
+    private readonly webhooks: WebhookIntegrationService,
   ) {}
 
   @Get('companies')
@@ -144,6 +158,97 @@ export class AdminController {
     assertUuid(keyId, 'keyId');
 
     return this.apiKeys.rotate(companyId, keyId);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Card webhook integration (F12)
+  //
+  // Two routes, and the asymmetry between them is the security story. Reading
+  // returns metadata only - a delivery id, a version, two timestamps - and
+  // reading it a thousand times reveals nothing. Writing MINTS A SIGNING
+  // SECRET and returns it once, which is why it alone carries `no-store`.
+  // ---------------------------------------------------------------------------
+
+  @Get('companies/:companyId/webhook-integration')
+  async describeWebhookIntegration(
+    @Param('companyId') companyId: string,
+  ): Promise<WebhookIntegrationState> {
+    assertUuid(companyId, 'companyId');
+
+    return this.webhooks.describe(companyId);
+  }
+
+  /**
+   * Creates the integration, or replaces its signing secret.
+   *
+   * One route for both, because they are the same operation: mint a secret
+   * and store it. A separate "rotate" would differ only in whether a row
+   * already existed, which is a detail of this database rather than something
+   * the caller should have to know.
+   *
+   * `no-store`: this is the only response in F12 that carries a plaintext
+   * credential, for the same reason the three key routes above do.
+   */
+  @Post('companies/:companyId/webhook-integration')
+  @Header('Cache-Control', 'no-store')
+  @HttpCode(HttpStatus.OK)
+  async provisionWebhookIntegration(
+    @Param('companyId') companyId: string,
+  ): Promise<ProvisionedWebhookIntegration> {
+    assertUuid(companyId, 'companyId');
+
+    return this.webhooks.provision(companyId);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Managers (F11)
+  //
+  // Same shape as the key routes above and the same security model: the
+  // company id is a SELECTOR applied after `@Roles('PLATFORM_ADMIN')` on the
+  // class has already established the caller. It is never evidence.
+  //
+  // What differs is which fields the server refuses to take from the caller.
+  // `role` and `companyId` are written by `ManagerAdminService` and are not in
+  // `createManagerSchema` at all, so a body carrying either is a 400 from a
+  // `.strict()` parse rather than a field somebody downstream has to remember
+  // not to spread (F11-T10, F11-T11).
+  // ---------------------------------------------------------------------------
+
+  @Get('companies/:companyId/managers')
+  async listManagers(
+    @Param('companyId') companyId: string,
+  ): Promise<{ items: readonly ManagerSummary[] }> {
+    assertUuid(companyId, 'companyId');
+
+    // Wrapped, for the same reason the key listing is: a top-level array
+    // cannot grow a `nextCursor` later without breaking every caller.
+    return { items: await this.managers.list(companyId) };
+  }
+
+  /**
+   * Creates one manager for this company.
+   *
+   * 201, and the body carries NO credential. The administrator chose the
+   * initial password and already has it; echoing it back would put a secret
+   * into a response, a proxy log and a devtools panel for no gain. That is
+   * why there is no `no-store` header here - unlike the three routes above,
+   * nothing in this response is worth caching protection.
+   */
+  @Post('companies/:companyId/managers')
+  @HttpCode(HttpStatus.CREATED)
+  async createManager(
+    @Param('companyId') companyId: string,
+    @Body() body: unknown,
+  ): Promise<ManagerSummary> {
+    assertUuid(companyId, 'companyId');
+
+    const parsed = createManagerSchema.safeParse(body);
+
+    if (!parsed.success) {
+      throw invalidRequest(parsed.error);
+    }
+
+    return this.managers.create(companyId, parsed.data);
   }
 
   @Post('companies/:companyId/api-keys/:keyId/revoke')

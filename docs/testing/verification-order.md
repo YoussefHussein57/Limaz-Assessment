@@ -96,10 +96,28 @@ bash scripts/verify-f00.sh
 bash scripts/verify-f01.sh
 bash scripts/verify-f02.sh
 bash scripts/verify-f02-1.sh
+
+# 5. The fresh install, LAST. It clones the repository at HEAD and runs it
+#    in an isolated compose project on its own ports, so it is the only step
+#    that does not touch the development stack - but it is still one at a
+#    time, because two copies share the compose project name.
+bash scripts/verify-fresh-install.sh
 ```
 
-Do **not** background any of steps 3 or 4, and do not run two of them in
+Do **not** background any of steps 3 to 5, and do not run two of them in
 separate terminals.
+
+### Why step 5 is isolated, and why that is not enough on its own
+
+`verify-fresh-install.sh` uses `-p limaz-fresh` and ports 3100/3101/5533, so
+it never touches the development volume and can run beside a dev stack. What
+it cannot survive is **a second copy of itself**: they share the compose
+project name, so the older run’s teardown destroys the newer run’s
+containers. That happened, and produced fifteen failures that had nothing to
+do with the product.
+
+It also clones from the repository **HEAD**, not the working tree - the
+thing being verified is what a reviewer gets.
 
 ### Run all four, not the two you are thinking of
 
@@ -108,7 +126,20 @@ and left the other two alone. `verify-f00.sh` had been **failing since
 F02.1** - its F00-T04 asserted `200` on `/`, which became a redirect to
 `/login` - and nothing noticed for six features (AI_LOG 45).
 
-A gate nobody runs is not a gate. All four run in every full verification.
+A gate nobody runs is not a gate. All four run in every full verification,
+and the fresh install runs after them.
+
+### Never edit a file while a script is building it
+
+The acceptance scripts run `docker compose up -d --build`, which copies the
+**working tree** into the image. Editing a source file mid-run gives the
+rebuilt image a half-applied change - and when that change was a Prisma
+schema, the result was three F00 checks failing against a client expecting a
+column no migration had created (AI_LOG 53).
+
+If work is in progress and the baseline needs verifying, `git stash` first.
+The failures that come out of ignoring this look exactly like product
+defects.
 
 ### A faster loop while developing
 

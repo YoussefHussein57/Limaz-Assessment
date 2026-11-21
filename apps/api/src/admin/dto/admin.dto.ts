@@ -114,3 +114,80 @@ export const createCompanySchema = z
   .strict();
 
 export type CreateCompanyDto = z.infer<typeof createCompanySchema>;
+
+/**
+ * Creating a company manager (F11).
+ *
+ * ---------------------------------------------------------------------------
+ * WHAT IS NOT IN THIS SCHEMA, AND WHY THAT IS THE SECURITY PROPERTY
+ * ---------------------------------------------------------------------------
+ *
+ * There is no `role` and no `companyId`. Both are derived by the server - the
+ * role is the literal `MANAGER`, and the company is the one in the path, which
+ * the guard has already established the caller may act on.
+ *
+ * `.strict()` is what turns their absence into a refusal rather than a silent
+ * drop. A body carrying `"role": "PLATFORM_ADMIN"` is a 400, not a field that
+ * is parsed and ignored: the difference matters because "ignored" depends on
+ * every future reader of this file knowing not to spread the parsed object
+ * into `prisma.user.create` (F11-T10, F11-T11).
+ */
+export const createManagerSchema = z
+  .object({
+    displayName: z
+      .string('displayName must be a string')
+      .trim()
+      .min(1, 'displayName must not be empty')
+      .max(200, 'displayName must be 200 characters or fewer'),
+
+    /**
+     * Lowercased with the SAME transform `loginSchema` applies.
+     *
+     * If the two ever diverged this endpoint would happily create an account
+     * whose address nobody could type: login would lowercase what the person
+     * entered, the stored value would still carry capitals, and the unique
+     * index would never match. The uniqueness model is unchanged - one global
+     * `@unique` on `User.email`, because login takes an email and a password
+     * with no company selector, so an address must identify exactly one user.
+     */
+    email: z
+      .string('email must be a string')
+      .max(320, 'email must be 320 characters or fewer')
+      .trim()
+      .toLowerCase()
+      // PIPED, not chained, and the order is the point. `.trim()` and
+      // `.toLowerCase()` are transforms; `z.email()` is a separate schema.
+      // Written the other way round, the format check runs against the raw
+      // input and ` Nour@Example.com ` - which is what a person pastes - is
+      // refused for the whitespace it was about to have removed (F11-T07).
+      .pipe(z.email('email must be a valid email address')),
+
+    /**
+     * The initial password, chosen by the administrator and handed over out
+     * of band.
+     *
+     * TWELVE at the low end. This endpoint SETS policy for a new credential,
+     * unlike login, which only verifies an existing one and is deliberately
+     * generous so that a "too short" answer cannot confirm an address exists.
+     *
+     * SEVENTY-TWO at the high end, and that number is not arbitrary: bcrypt
+     * hashes at most 72 bytes and silently discards the rest. Accepting 200
+     * characters would mean an administrator who carefully pasted a long
+     * passphrase had the tail thrown away without being told - the account
+     * would still work, with far less entropy than the person believes they
+     * set. Refusing is honest; truncating quietly is not (F11-T08b).
+     *
+     * The bound is on BYTES, not characters, because that is what bcrypt
+     * counts: a 40-character passphrase in Arabic is already over the limit
+     * in UTF-8.
+     */
+    password: z
+      .string('password must be a string')
+      .min(12, 'password must be at least 12 characters')
+      .refine((value) => Buffer.byteLength(value, 'utf8') <= 72, {
+        message: 'password must be 72 bytes or fewer (bcrypt ignores anything beyond that)',
+      }),
+  })
+  .strict();
+
+export type CreateManagerDto = z.infer<typeof createManagerSchema>;

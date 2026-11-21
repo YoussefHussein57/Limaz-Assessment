@@ -107,12 +107,39 @@ however much code exists for it.
 
 | Requirement | Evidence | Status |
 |---|---|---|
-| `AI_LOG.md` with tools, prompts and a real mistake caught | [AI_LOG.md](../AI_LOG.md) - **50 recorded**, each with how it was noticed and what prevents recurrence | **DONE** |
-| Commit as you go | 3 commits, one per feature so far | **DONE** |
+| `AI_LOG.md` with tools, prompts and a real mistake caught | [AI_LOG.md](../AI_LOG.md) - **62 recorded**, each with how it was noticed and what prevents recurrence | **DONE** |
+| Commit as you go | One commit per feature throughout, plus a `v1.0.0-core` tag before the optional bonus began | **DONE** |
 
 ## Section 10 - Card webhook
 
-**OPTIONAL.** Deliberately untouched until F00-F10 are complete and approved.
+**OPTIONAL BONUS, and it is built.** Deliberately started only after F00-F10
+were complete, verified and tagged `v1.0.0-core` - which is what the brief's
+*"do this only once the core works"* asks. That tag still exists, and the
+mandatory assessment is complete without any of this.
+
+Every clause of section 10, mapped to what satisfies it:
+
+| What the assessment says | Implementation | Verification | Status |
+|---|---|---|---|
+| "The card provider sends a webhook when a transaction settles" | `POST /v1/webhooks/card-transactions`, taking the provider's event shape verbatim | F12-T10 | **DONE** |
+| "each one should become an expense that goes through the same policy rules" | `WebhookProcessorService` calls `ExpenseSubmissionService.submit` - the **same** entry point `POST /v1/expenses` uses. No second engine exists | F12-T63 to T67; T67 compares a webhook expense against an identical API one and asserts the same decision, status and policy snapshot | **DONE** |
+| "It signs each request with a per-company secret, using HMAC-SHA256 over a timestamp and the raw body" | `webhook-crypto.ts`; signed material is `${timestamp}.${rawBody}`, verified against `request.rawBody` | F12-T10 to T19, F12-U30 to U45. T19 delivers the same object with different whitespace and it is refused | **DONE** |
+| "It retries until it gets a 2xx, so the same event can arrive more than once" | 202 sent **after** the commit; `@@unique([companyId, providerEventId])`; a redelivery answers `DUPLICATE` | F12-T50, T51, T52 (concurrent), T53 (conflicting payload) | **DONE** |
+| "It cannot send your API key" | The route is `@Public()` and `@WebhookExempt()`, authenticating on the signature alone. No cookie, no key, no CSRF header | F12-T26 | **DONE** |
+| "Work out which company each webhook belongs to without trusting the payload" | The delivery id header is untrusted **lookup input**; the company is taken from the integration whose secret verified the signature. The event schema has no company field | F12-T17 (another company's secret), T40, T41, T42 | **DONE** |
+| "make sure each transaction becomes exactly one expense" | `externalId = data.transactionId` under `@@unique([companyId, source, externalId])`. The event id deduplicates **deliveries**; the transaction id deduplicates **payments** | F12-T70, T71, T91, T92 | **DONE** |
+| "process events asynchronously (BullMQ is one option)" | A durable PostgreSQL inbox and a `FOR UPDATE SKIP LOCKED` worker. BullMQ was considered and rejected: it is a second store that can disagree with the first, in a deployment whose promise is one `docker compose up` | F12-T54 (acceptance creates no expense), T60, T73 (concurrent claims) | **DONE** |
+| "Explain what happens when your queue is down" | **Explained**, in the README and [F12-card-webhook.md](features/F12-card-webhook.md) §9. The queue is a table in the same database, so "queue down" and "database down" are one event: acceptance fails too, so no 2xx is sent, so the provider keeps retrying and nothing is lost | Reasoned, not executed - the claim is about behaviour that follows from the design | **DONE** (an explanation is what is asked for) |
+| "how you would find events the provider never delivered" | **Explained honestly: this system cannot, on its own.** Three approaches ranked by cost, with the reason each is or is not viable here. Recorded as R-38 | Stated as a gap rather than implemented | **DONE** (an explanation is what is asked for) |
+
+### Beyond section 10 - owner-requested enhancements
+
+Neither is an assessment requirement, and neither is presented as one.
+
+| Enhancement | Why it exists | Evidence |
+|---|---|---|
+| **Manager provisioning (F11)** | Closes R-32. The assessment asks for *seeded* managers, which existed since F01; it does not ask for creating them. This was the most visible gap in the admin panel | 30 tests; F11-T22 signs in as a provisioned account and resolves a real review |
+| **Sandbox payment simulator (F12)** | So the whole webhook pipeline can be demonstrated without a provider, a card or any money. It delivers **real signed HTTP requests** to the real endpoint rather than shortcutting it | 23 tests; F12-T110 asserts the invalid-signature preset is refused by the real verifier |
 
 ## Section 11 - Submission
 
@@ -159,10 +186,10 @@ what is actually in the repository. Status vocabulary as above, plus
 | 4 | Per-company policy in the database, two companies seeded differently; amount limit, frequency (>3 in 60 min), blocked category; strongest decision wins; every rule that fired is listed | **PASS** | F04-T01 to T45; F09 end-to-end B1-B5b, including two rules firing and REJECT winning with both reasons returned |
 | 5 | A REVIEW opens a review; a manager approves or rejects, setting the final status; exactly one of two simultaneous resolves wins and the other is told clearly; reviewer is the logged-in manager; a record of who, when and how | **PASS** | F05-T01 to T44, F05-NC1; F07 two independent browser sessions; F09 M6-M10b and T22 |
 | 6 | Two UI areas - manager dashboard (expenses and decisions, open reviews, policy editing) and admin panel (all companies, create, API keys); every rule holds when the API is called directly | **PASS** | F06, F07, F08; every F09 refusal measured against the API with the UI bypassed |
-| 7 | Automated tests proving tenant isolation, idempotency including simultaneous requests, the concurrent resolve, and which decision wins | **PASS** | 517 automated tests; the four guarantees each have a **negative control** that fails when the mechanism is removed |
+| 7 | Automated tests proving tenant isolation, idempotency including simultaneous requests, the concurrent resolve, and which decision wins | **PASS** | 647 automated tests; the four guarantees each have a **negative control** that fails when the mechanism is removed |
 | 8 | Eight decisions, answered in the README | **PASS** | README "The eight decisions", each backed by an ADR and named tests |
-| 9 | `AI_LOG.md` with tools, prompts, and at least one real AI mistake caught and fixed | **PASS** | 50 defects recorded, each with how it was noticed and what prevents recurrence |
-| 10 | Card webhook intake | **NOT APPLICABLE** - marked `OPTIONAL BONUS`, and the brief says to do it "only once the core works". Deliberately not started so the core could be finished and verified |
+| 9 | `AI_LOG.md` with tools, prompts, and at least one real AI mistake caught and fixed | **PASS** | 62 defects recorded, each with how it was noticed and what prevents recurrence |
+| 10 | Card webhook intake | **PASS (optional bonus)** - built in F12, **after** the core was finished, verified and tagged `v1.0.0-core`, which is what "only once the core works" asks. Every clause mapped in the section above |
 | 11 | Private GitHub repo, `tarek-ragab-abdelal` invited, email by 24 Nov; `docker compose up` starts everything; a seed fills both companies, users, keys, policies and sample data; a README someone new can understand alone | **PASS**, except the email, which is the project owner's to send | Fresh-install verification from a clean clone in an isolated compose project; README rewritten in F10 |
 
 ## Accepted limitations, in one place
@@ -177,7 +204,7 @@ its risk entry.
 | 3 | Keyset pagination has no backward cursor; "Older" walks a client-held trail | R-28 |
 | 4 | Three high and nineteen moderate `npm audit` findings, all in dev tooling, measured unreachable | R-30 |
 | 5 | Concurrent policy edits are last-write-wins with no conflict reported | R-31 |
-| 6 | A newly created company has no manager until one is provisioned outside the app | R-32 |
+| 6 | ~~A newly created company has no manager until one is provisioned outside the app~~ **Closed in F11** - the admin workspace creates them | ~~R-32~~ |
 | 7 | API key issuance is not idempotent; a lost response leaves a key nobody holds | R-33 |
 | 8 | The `Origin` check refuses a different spelling of the same host | R-34 |
 | 9 | No load testing, and no screen-reader or WCAG conformance audit | F09 §12 |

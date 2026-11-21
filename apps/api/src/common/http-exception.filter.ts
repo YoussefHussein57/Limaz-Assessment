@@ -97,7 +97,17 @@ export class HttpExceptionFilter implements ExceptionFilter {
 
         return {
           statusCode,
-          error: typeof record.error === 'string' ? record.error : defaultErrorCode(statusCode),
+          // Only an error code that follows THIS API's convention is kept.
+          //
+          // Nest's own exceptions carry a reason phrase - `"Bad Request"`,
+          // `"Payload Too Large"` - and letting one through would publish two
+          // different vocabularies from one endpoint, so a client parsing
+          // `error` would have to know which layer answered. Anything that is
+          // not lower_snake_case becomes the code for its status.
+          //
+          // Found when a malformed JSON body on the webhook route answered
+          // `"error": "Bad Request"` instead of `invalid_request` (AI_LOG 58).
+          error: isErrorCode(record.error) ? record.error : defaultErrorCode(statusCode),
           message: redactText(messageOf(record.message) ?? exception.message),
           // Spread, so the key is ABSENT rather than `undefined` when there is
           // nothing to add. `JSON.stringify` drops an undefined value anyway,
@@ -113,6 +123,28 @@ export class HttpExceptionFilter implements ExceptionFilter {
       };
     }
 
+    // A body-parser rejection, which is NOT an HttpException.
+    //
+    // This was a real 500 for every oversized or malformed request body on
+    // every POST in the application, including `POST /v1/expenses` - and the
+    // assessment says in as many words that bad input must never cause a
+    // server error. Found while testing the webhook endpoint's size limit,
+    // confirmed against the expense endpoint, and pre-existing since F03
+    // (AI_LOG 58).
+    //
+    // It is translated HERE rather than in a body-parser option because the
+    // problem is not where the error is raised - it is that an error carrying
+    // a perfectly good 4xx was being flattened to 500 by the catch-all below.
+    const parserError = asBodyParserError(exception);
+
+    if (parserError) {
+      return {
+        statusCode: parserError.statusCode,
+        error: parserError.error,
+        message: parserError.message,
+      };
+    }
+
     // Anything unrecognised. The caller gets a fixed string; the real error is
     // in the server log and nowhere else.
     return {
@@ -120,6 +152,63 @@ export class HttpExceptionFilter implements ExceptionFilter {
       error: 'internal_error',
       message: 'An unexpected error occurred.',
     };
+  }
+}
+
+/**
+ * Recognises a `body-parser` rejection and gives it an honest status.
+ *
+ * Matched on SHAPE rather than on `instanceof`: body-parser is a transitive
+ * dependency of `@nestjs/platform-express`, so importing its error class here
+ * would make this file depend on a package nothing else in the codebase names.
+ *
+ * The messages are written from scratch, not copied from the exception. The
+ * library's own text names the limit and the parser internals, and there is no
+ * reason to publish either.
+ *
+ * Only the four types that are genuinely the caller's fault are translated.
+ * Anything else stays a 500, because a parser failure we have not reasoned
+ * about is not a failure we should be describing to an unauthenticated caller.
+ */
+function asBodyParserError(
+  exception: unknown,
+): { statusCode: number; error: string; message: string } | null {
+  if (typeof exception !== 'object' || exception === null) {
+    return null;
+  }
+
+  const shaped = exception as { type?: unknown; status?: unknown; statusCode?: unknown };
+  const status = typeof shaped.status === 'number' ? shaped.status : shaped.statusCode;
+
+  if (typeof status !== 'number' || typeof shaped.type !== 'string') {
+    return null;
+  }
+
+  switch (shaped.type) {
+    case 'entity.too.large':
+      return {
+        statusCode: HttpStatus.PAYLOAD_TOO_LARGE,
+        error: 'payload_too_large',
+        message: 'The request body is larger than this endpoint accepts.',
+      };
+
+    case 'entity.parse.failed':
+      return {
+        statusCode: HttpStatus.BAD_REQUEST,
+        error: 'invalid_request',
+        message: 'The request body is not valid JSON.',
+      };
+
+    case 'encoding.unsupported':
+    case 'charset.unsupported':
+      return {
+        statusCode: HttpStatus.UNSUPPORTED_MEDIA_TYPE,
+        error: 'unsupported_media_type',
+        message: 'The request body uses an encoding this endpoint does not accept.',
+      };
+
+    default:
+      return null;
   }
 }
 
@@ -184,7 +273,10 @@ function messageOf(value: unknown): string | null {
 function defaultErrorCode(statusCode: number): string {
   switch (statusCode) {
     case HttpStatus.BAD_REQUEST:
-      return 'bad_request';
+      // 'invalid_request', not 'bad_request': every 400 the DTOs throw already
+      // uses it, and two codes for one status would make a client branch on
+      // which layer answered. Nothing asserted the old value.
+      return 'invalid_request';
     case HttpStatus.UNAUTHORIZED:
       return 'unauthenticated';
     case HttpStatus.FORBIDDEN:
@@ -198,4 +290,16 @@ function defaultErrorCode(statusCode: number): string {
     default:
       return 'error';
   }
+}
+
+/**
+ * Whether a value is one of THIS API's error codes.
+ *
+ * `lower_snake_case`, which every code the services throw already is, and
+ * which no Nest reason phrase can be - they are title-cased and contain
+ * spaces. A narrow test rather than "is it a string", so a new code has to
+ * look like the others to be published.
+ */
+function isErrorCode(value: unknown): value is string {
+  return typeof value === 'string' && /^[a-z][a-z0-9_]*$/u.test(value);
 }

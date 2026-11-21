@@ -77,26 +77,44 @@ If the invitation needs re-sending:
 > expenses with an API key and receive APPROVE, REVIEW or REJECT with every
 > rule that fired; managers work through the REVIEW cases and edit their
 > company's policy in a dashboard; and a platform administrator creates
-> companies and manages their API keys. NestJS and PostgreSQL with Prisma on
-> the backend, Next.js on the frontend.
+> companies, provisions their managers and manages their API keys. NestJS and
+> PostgreSQL with Prisma on the backend, Next.js on the frontend.
+>
+> **The optional card webhook bonus in section 10 is also implemented**, built
+> after the mandatory core was finished and verified - the tag `v1.0.0-core`
+> marks that point, so the core stands on its own without any of it. Card
+> transactions arrive as HMAC-signed webhooks, verified against the raw
+> request bytes with a per-company secret, land in a durable PostgreSQL
+> inbox, and are processed asynchronously through the same policy engine and
+> review lifecycle as an ordinary submission.
+>
+> So you can see it work without a payment provider or a real card, there is
+> a sandbox simulator in the admin panel. It signs a synthetic provider event
+> on the server and delivers it over real HTTP to the real endpoint, so the
+> actual verifier runs - including for the deliberately invalid and expired
+> signature presets, which are refused. No money moves and no card details
+> are involved anywhere.
 >
 > To run it: `cp .env.example .env` then `docker compose up`. That starts
 > everything, applies the migrations and seeds two companies with different
 > policies, their users, API keys and sample expenses. The web application is
 > at http://localhost:3000 and the credentials are in the README.
 >
-> There are 517 automated tests, 487 of them against real PostgreSQL rather
+> There are 647 automated tests, 617 of them against real PostgreSQL rather
 > than mocks - including four negative controls that remove a mechanism and
 > show the failure it was preventing reappear. The README covers how to run
 > and test it, how it is put together, my answers to the eight decisions, how
 > I would deploy it, and what I would do next. It also lists the limitations I
-> chose to accept and why.
+> chose to accept and why - including the one part of the webhook bonus I
+> explained rather than built, which is how you would find an event the
+> provider never delivered.
 >
 > AI_LOG.md records how I used Claude Code and the defects I found and fixed
 > along the way, including the ones that were my own mistakes.
 >
 > There is a five-minute walkthrough near the top of the README if you would
-> like the quickest path through the system.
+> like the quickest path through the system, and a second one after it for
+> the card webhook if you want to see that part.
 >
 > Thank you for the opportunity - I am happy to go through any part of it with
 > you.

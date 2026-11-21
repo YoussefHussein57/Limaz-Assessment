@@ -5,7 +5,9 @@ import type {
   CompanyPage,
   CreateCompanyInput,
   CreateCompanyResult,
+  CreateManagerInput,
   IssuedApiKey,
+  ManagerSummary,
 } from './admin-types';
 
 /**
@@ -33,6 +35,7 @@ export const adminKeys = {
     [...adminKeys.companies(), 'list', search, cursor] as const,
   company: (id: string) => [...adminKeys.companies(), 'detail', id] as const,
   apiKeys: (companyId: string) => [...adminKeys.companies(), 'api-keys', companyId] as const,
+  managers: (companyId: string) => [...adminKeys.companies(), 'managers', companyId] as const,
 };
 
 export const ADMIN_PAGE_SIZE = 25;
@@ -96,5 +99,37 @@ export async function revokeApiKey(companyId: string, keyId: string): Promise<Ap
     'POST',
     `/v1/admin/companies/${encodeURIComponent(companyId)}/api-keys/${encodeURIComponent(keyId)}/revoke`,
     {},
+  );
+}
+
+// -----------------------------------------------------------------------------
+// Managers (F11)
+// -----------------------------------------------------------------------------
+
+export async function fetchManagers(
+  companyId: string,
+  signal?: AbortSignal,
+): Promise<{ items: ManagerSummary[] }> {
+  return apiGet<{ items: ManagerSummary[] }>(
+    `/v1/admin/companies/${encodeURIComponent(companyId)}/managers`,
+    signal,
+  );
+}
+
+/**
+ * Creates one manager.
+ *
+ * The response carries no credential - unlike `createCompany`, `issueApiKey`
+ * and `rotateApiKey`, which is why none of the one-time-secret machinery is
+ * involved here. The administrator already holds the password they chose.
+ */
+export async function createManager(
+  companyId: string,
+  input: CreateManagerInput,
+): Promise<ManagerSummary> {
+  return apiSend<ManagerSummary>(
+    'POST',
+    `/v1/admin/companies/${encodeURIComponent(companyId)}/managers`,
+    input,
   );
 }

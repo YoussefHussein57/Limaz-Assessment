@@ -1,7 +1,12 @@
 # Interview defence
 
-Five realistic questions per completed feature, with the answer I should be able
-to give, and the place in this repository that backs it up.
+Five realistic questions per completed feature - ten for the webhook bonus -
+with the answer I should be able to give, and the place in this repository that
+backs it up.
+
+The webhook set carries a line of Egyptian Arabic before each question saying
+what the interviewer is actually probing for, which is a different thing from
+what the question asks.
 
 The questions are written to attack **our actual choices**, not textbook theory.
 
@@ -17,6 +22,8 @@ The questions are written to attack **our actual choices**, not textbook theory.
 | [F06 - Manager dashboard](F06-manager-dashboard.md) | 5 | Not yet |
 | [F07 - Reviews and policy settings](F07-reviews-and-policy-settings.md) | 5 | Not yet |
 | [F08 - Platform administration](F08-platform-administration.md) | 5 | Not yet |
+| [F11 - Manager provisioning](F11-manager-provisioning.md) | 5 | Not yet |
+| [F12/F13 - Card webhook bonus](F12-card-webhook.md) | 10 | Not yet |
 
 ## Learning gaps
 
@@ -128,11 +135,22 @@ revising means reading the argument rather than a summary of it.
 20. Where does the browser keep the session, and why not a JWT? —
     [ADR-008](../adr/ADR-008-browser-session.md)
 
+### The optional bonus, if you want to go there
+
+21. Why does HMAC need the **raw** body, and what breaks if you verify the
+    parsed object? — [F12 Q2](F12-card-webhook.md)
+22. You hash every other credential. Why is the webhook signing secret
+    encrypted instead? — [F12 Q3](F12-card-webhook.md)
+23. A worker commits the expense and then dies. What happens next? —
+    [F12 Q8](F12-card-webhook.md)
+24. Is the webhook pipeline exactly-once? — [F12 Q9](F12-card-webhook.md)
+
 ### The one to ask for
 
 If you want the single question that shows the most: **"tell me about a
 mistake you made in this project and how you found it."** The answer is in
-[`AI_LOG.md`](../../AI_LOG.md) - 50 of them, including a live API key written
+[`AI_LOG.md`](../../AI_LOG.md) - 62 of them, including a live API key written
 into a screenshot by a redaction that React undid, an acceptance check that had
-been failing for six features, and a seed that refused to start as soon as
-anybody used the application.
+been failing for six features, a seed that refused to start as soon as anybody
+used the application, and an oversized request body that had been answering 500
+on every endpoint since F03 - found by a webhook test, and pre-existing.

@@ -72,7 +72,7 @@ describe('F01 database constraints', () => {
     );
 
     expect(rejection.code).toBe(PG.UNIQUE_VIOLATION);
-    expect(rejection.constraint).toBe('expenses_companyId_externalId_key');
+    expect(rejection.constraint).toBe('expenses_companyId_source_externalId_key');
   });
 
   // --- F01-T05 ---------------------------------------------------------------

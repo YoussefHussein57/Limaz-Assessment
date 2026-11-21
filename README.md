@@ -15,6 +15,10 @@ identifier belonging to another company.
 > [Five-minute walkthrough](#five-minute-walkthrough) ·
 > [The eight decisions](#the-eight-decisions) ·
 > [Known limitations](#known-limitations)
+>
+> **For the optional bonus:**
+> [Card webhook intake](#card-webhook-intake-the-optional-bonus) ·
+> [Five more minutes](#five-more-minutes-for-the-card-webhook)
 
 ---
 
@@ -26,12 +30,14 @@ identifier belonging to another company.
 | **Policy engine** | Amount limit, frequency (more than *n* in *m* minutes) and blocked categories, per company, from the database. `REJECT > REVIEW > APPROVE`, no reason discarded |
 | **Reviews** | A `REVIEW` decision opens exactly one review. A manager approves or rejects it, which sets the expense's final status. Two managers racing produce exactly one winner, and the loser is told who decided and what |
 | **Manager dashboard** | Company totals by status from one aggregate query; a searchable, filterable, keyset-paginated expense list; an expense detail carrying every reason with its evidence and the policy snapshot it was judged against; the review queue; and the four policy settings, editable |
-| **Admin panel** | Every company, creating one (company + policy + first API key in a single transaction), and the full key lifecycle: issue, rotate with a 24-hour grace window, revoke immediately |
-| **Tests** | **517** automated tests, 487 of them against real PostgreSQL, including four **negative controls** that fail when the mechanism they protect is removed |
+| **Admin panel** | Every company, creating one (company + policy + first API key in a single transaction), **its manager accounts**, and the full key lifecycle: issue, rotate with a 24-hour grace window, revoke immediately |
+| **Card webhook** *(the optional bonus)* | `POST /v1/webhooks/card-transactions`. HMAC-SHA256 over the **raw** request bytes with a per-company secret, the company derived from the signature rather than the payload, a durable PostgreSQL inbox, and asynchronous processing through the **same** policy engine. Plus a sandbox simulator that signs server-side and delivers over real HTTP |
+| **Tests** | **647** automated tests, 617 of them against real PostgreSQL, including four **negative controls** that fail when the mechanism they protect is removed |
 
-Not built: the optional card webhook (section 10 of the assessment), which the
-brief says to attempt only once the core works. The core was finished and
-verified instead.
+The optional card webhook (section 10) was built **after** the mandatory core
+was finished, verified and tagged `v1.0.0-core` - which is what the brief asks:
+*"do this only once the core works."* That tag is still there, and the core is
+complete without any of it.
 
 ## Technology
 
@@ -51,6 +57,7 @@ verified instead.
 flowchart LR
   UI["Browser<br/>dashboard + admin panel"]
   INT["Company backend<br/>server to server"]
+  CARD["Card provider<br/>signed webhooks"]
 
   subgraph WEB["Next.js :3000"]
     RSC["Server Components<br/>resolve the session"]
@@ -61,19 +68,25 @@ flowchart LR
     AUTH["AuthenticationGuard<br/>API key or session"]
     CSRF["CsrfGuard<br/>header + Origin"]
     ROLE["AuthorizationGuard<br/>role + caller type"]
-    SVC["Submission + PolicyEvaluator<br/>ReviewResolution<br/>Company / ApiKey admin"]
+    HMAC["Webhook verifier<br/>HMAC over the raw body"]
+    SVC["ExpenseSubmission + PolicyEvaluator<br/>ReviewResolution<br/>Company / Manager / ApiKey admin"]
+    WORK["Webhook worker<br/>claims from the inbox"]
   end
 
-  DB[("PostgreSQL<br/>constraints, indexes,<br/>advisory locks")]
+  DB[("PostgreSQL<br/>constraints, indexes,<br/>advisory locks, event inbox")]
 
   UI -- "same origin only" --> PROXY
   UI --> RSC
   RSC -- "server side" --> AUTH
   PROXY -- "server side" --> AUTH
   INT -- "x-api-key, no browser" --> AUTH
+  CARD -- "x-limaz-signature" --> HMAC
   AUTH --> CSRF
   CSRF --> ROLE
   ROLE --> SVC
+  HMAC -- "accepted, 202" --> DB
+  DB -- "FOR UPDATE SKIP LOCKED" --> WORK
+  WORK --> SVC
   SVC --> DB
 ```
 
@@ -95,6 +108,15 @@ measured with the UI bypassed - see
 checks: a unique constraint for idempotency, a conditional `UPDATE` for review
 resolution, a transaction-scoped advisory lock for frequency counting. Each has
 a negative control proving the failure reappears without it.
+
+**Why the card webhook has its own door.** It is the one caller that can send
+neither an API key nor a cookie - the provider has neither - so it
+authenticates on a per-request HMAC signature instead, and the route is
+exempt from `CsrfGuard` for the same reason API-key callers are: CSRF protects
+credentials a *browser* attaches automatically, and there are none here. It
+then joins the ordinary path: the worker calls the same
+`ExpenseSubmissionService` a company backend reaches, so there is no second
+policy engine anywhere.
 
 ---
 
@@ -177,6 +199,13 @@ naming the offending variables without printing their values.
 | `BCRYPT_COST` | 10 | Passwords only |
 | `DB_POOL_MAX` | 10 | Must stay above any concurrency a test uses (risk R-10) |
 | `SEED_DEV_DATA` | `true` in compose | The seed **refuses** to run under `NODE_ENV=production` without it |
+| `WEBHOOK_ENCRYPTION_KEY` | a labelled development key in compose | **Required in every environment, no default in the schema.** 32 bytes, base64. It encrypts each company’s webhook signing secret at rest; see the [card webhook section](#card-webhook-intake-the-optional-bonus) for why that one is encrypted rather than hashed |
+| `WEBHOOK_TOLERANCE_SECONDS` | 300 | How far a delivery’s **signature** timestamp may sit from our clock. Replay protection, and nothing to do with when the money was spent |
+| `WEBHOOK_MAX_ATTEMPTS` | 5 | How many times a worker may claim one event before it becomes terminal |
+| `WEBHOOK_CLAIM_LEASE_SECONDS` | 60 | How long a worker’s claim is respected. This is the crash-recovery window |
+| `WEBHOOK_POLL_INTERVAL_MS` | 1000 | Idle poll interval, floored so a misconfiguration cannot busy-loop |
+| `WEBHOOK_WORKER_ENABLED` | `true` | Off in the test suite, where the worker is driven one event at a time |
+| `SANDBOX_SIMULATOR_ENABLED` | `false` in the schema, `true` in compose | Whether the payment simulator exists. An **explicit** flag, deliberately not `NODE_ENV` - the image sets `NODE_ENV=production` on a laptop too |
 
 ---
 
@@ -219,20 +248,64 @@ container seeds on every start without the data doubling. It verifies its own
 work by counting **its own** rows, so expenses you create do not stop the stack
 restarting.
 
+### Complete company onboarding
+
+```mermaid
+sequenceDiagram
+  participant A as Platform admin
+  participant API as LIMAZ API
+  participant DB as PostgreSQL
+  participant M as New manager
+
+  A->>API: POST /v1/admin/companies
+  API->>DB: company + policy + first API key, ONE transaction
+  DB-->>API: committed
+  API-->>A: 201 with the key, shown once
+
+  A->>API: POST /v1/admin/companies/:id/managers
+  Note over API: role and companyId are written by the server<br/>and are absent from the strict schema
+  API->>DB: INSERT user, bcrypt hash, role MANAGER
+  DB-->>API: committed
+  API-->>A: 201 with no credential in the body
+
+  A->>API: POST /v1/admin/companies/:id/webhook-integration
+  API->>DB: delivery id + AES-256-GCM sealed signing secret
+  API-->>A: 200, Cache-Control no-store, secret shown once
+
+  M->>API: POST /v1/auth/login
+  API-->>M: session cookie, scoped to that company
+```
+
 ### Creating a manager for a company you created yourself
 
-Creating a company makes its policy and first API key but **not** a manager
-(assumption A5, risk R-32): the application would have to invent a password or
-grow an invitation subsystem, and neither belongs here. For end-to-end testing,
-provision one yourself - **development only**:
+**In the application.** Open the company in the admin workspace and use the
+**Managers** panel: *Add manager*, then a name, an email and an initial
+password of at least 12 characters.
+
+Creating a company still makes its policy and first API key but **not** a
+manager (assumption A5) - a company's first manager is a separate, deliberate
+act rather than a side effect. What changed in F11 is that it is now an act
+you can perform, instead of a database row you had to write yourself.
+
+Three things the panel does not pretend to do, and says so:
+
+- **nothing is emailed.** You choose the initial password and hand it over
+  yourself. The API never returns it.
+- **there is no reset.** A manager cannot change their password in the
+  application, and neither can you (risk R-36).
+- **accounts cannot be removed.** A resolved review names its reviewer, and
+  `onDelete: Restrict` means the database refuses to orphan that record.
+
+The same thing over the API, if you prefer:
 
 ```bash
-docker compose exec -T api node -e "console.log(require('bcryptjs').hashSync(process.argv[1],10))" 'ChooseYourOwnPassword!'
+curl -s -X POST http://localhost:3001/v1/admin/companies/<companyId>/managers \
+  -H 'content-type: application/json' -H 'x-limaz-client: 1' \
+  -b cookies.txt \
+  -d '{"displayName":"Test Manager","email":"you@example.test","password":"ChooseYourOwn!2026"}'
 ```
 
-```bash
-docker compose exec -T db psql -U limaz -d limaz -c "INSERT INTO users (id,\"companyId\",email,\"displayName\",role,\"passwordHash\",\"createdAt\",\"updatedAt\") SELECT gen_random_uuid(), id, 'you@example.test', 'Test Manager', 'MANAGER', '<paste the hash>', now(), now() FROM companies WHERE name = 'Your Company';"
-```
+`201` with the new manager's id, email and role - and **no credential**.
 
 ---
 
@@ -289,6 +362,57 @@ transaction and shows the raw key **once**. Copy it, submit an expense with it,
 and the policy created in that same transaction is what decides it. Rotate the
 key: both work, because the old one gets a 24-hour grace window. Revoke one: it
 stops immediately.
+
+
+### Five more minutes, for the card webhook
+
+Everything below is through the application. No database insert, no provider,
+no card, no money.
+
+**1. Create a company.** Sign in as `admin@limaz.test` → **Add a company**.
+Give it an auto-approval limit of 400.00 SAR and block `GAMBLING`. Copy the
+API key it shows once.
+
+**2. Add a manager.** Open the company → **Managers** → *Add manager*. A name,
+an email, and a password of at least 12 characters that **you** choose and hand
+over - nothing is emailed, and the response carries no credential.
+
+**3. Provision the webhook integration.** Same page → **Card webhook** →
+*Provision integration*. You get a delivery id and a signing secret, shown
+once. The page tells you the endpoint.
+
+**4. Send a card payment over the limit.** **Payment simulator** → choose the
+company → *Above amount limit*. Watch the right-hand panel: the request is
+signed and delivered, the endpoint answers **202**, the event is stored, a
+worker picks it up, and the policy decides **REVIEW**. Every one of those lines
+is read back from the server - none of it is a timer.
+
+**5. Resolve it as the manager.** Sign in as the manager you created. The
+expense is in **Reviews**, with `AMOUNT_LIMIT` and the limit it was judged
+against. Approve it. The expense now reads *Policy: Review* **and** *Approved*.
+
+**6. Replay the event.** Back as the administrator → **Payment simulator** →
+*Replay event*. The panel says **"Already received — no second event was
+created"**, pointing at the same event and the same expense. Check **Reviews**:
+nothing new, and the resolved expense is untouched.
+
+**7. Prove the verifier is real.** *Invalid signature*, then *Expired
+signature*. Both answer **401** from the real endpoint, and both say so:
+*"The verifier ran normally. Nothing was stored and no expense exists."*
+Open **Webhook events** - neither appears, because a refused delivery is never
+stored.
+
+**8. Do it without the simulator.** With the delivery id and secret from step
+3:
+
+```bash
+WEBHOOK_DELIVERY_ID=whi_... WEBHOOK_SECRET=whsec_... \
+  node scripts/send-card-webhook.mjs --amount 95000 --merchant "Grand Hotel" --category TRAVEL
+```
+
+Then run the replay command it prints, and the `--tamper` flag. The script
+computes the HMAC itself, so if the contract above is wrong, it fails.
+
 
 **Further, if you want it:** the per-feature manual cycles in
 [`docs/testing/`](docs/testing/) walk the same ground in more detail -
@@ -417,6 +541,396 @@ automatically, so an ambiguous network failure cannot mint a second credential
 by itself (risk R-33).
 
 ---
+
+## Card webhook intake *(the optional bonus)*
+
+Card transactions arrive as signed webhooks and become expenses that go through
+the same policy rules as everything else. Full reasoning in
+[`docs/features/F12-card-webhook.md`](docs/features/F12-card-webhook.md).
+
+### The contract
+
+```http
+POST /v1/webhooks/card-transactions
+x-limaz-webhook-id: whi_<22 chars>
+x-limaz-timestamp:  <unix seconds>
+x-limaz-signature:  <64 lowercase hex>
+content-type: application/json
+
+{
+  "id": "evt_8f2c1",
+  "type": "transaction.settled",
+  "createdAt": "2026-11-20T09:15:02Z",
+  "data": {
+    "transactionId": "txn_5531",
+    "cardholderId": "emp-7",
+    "amount": 12500,
+    "currency": "SAR",
+    "merchant": "City Taxi",
+    "category": "TRANSPORT",
+    "spentAt": "2026-11-20T09:15:00Z"
+  }
+}
+```
+
+**Signed material:** `${timestamp}.${rawBody}`, HMAC-SHA256, hex.
+
+| Status | Meaning |
+|---|---|
+| `202` `ACCEPTED` | Committed to the inbox. **No expense exists yet** |
+| `202` `DUPLICATE` | Already received. Nothing further was created |
+| `202` `IGNORED` | Authenticated and stored, but this service does not process that event type |
+| `400` | Malformed JSON, or a payload field that is not what it claims |
+| `401` | Signature, timestamp or webhook id not accepted - **one shape for every cause** |
+| `409` | That event id already describes a different payment |
+| `413` | Larger than the body limit |
+
+202 rather than 201: the event is stored, no expense exists. A provider
+dashboard showing "created" for an event that policy will REJECT would be a lie
+told by a status code.
+
+### Setting it up
+
+Open the company in the admin workspace and use **Card webhook → Provision
+integration**. You get a delivery id and a signing secret, shown **once**.
+
+### Delivering one yourself, without the simulator
+
+```bash
+WEBHOOK_DELIVERY_ID=whi_... WEBHOOK_SECRET=whsec_... \
+  node scripts/send-card-webhook.mjs --amount 95000 --merchant "Grand Hotel" --category TRAVEL
+```
+
+```powershell
+$env:WEBHOOK_DELIVERY_ID = 'whi_...'
+$env:WEBHOOK_SECRET      = 'whsec_...'
+node scripts/send-card-webhook.mjs --amount 95000 --merchant "Grand Hotel" --category TRAVEL
+```
+
+It prints the exact command that **redelivers** that event, every field
+included - because the obvious attempt, re-running with `--event-id` alone,
+produces a `409` and looks like a server bug. Payload identity covers every
+business field including `spentAt`, which defaults to "now".
+
+Three flags prove the verifier is real, and each exits 0 only if the request is
+**refused**:
+
+```bash
+node scripts/send-card-webhook.mjs --bad-signature   # a wrong signature
+node scripts/send-card-webhook.mjs --tamper          # body changed AFTER signing
+node scripts/send-card-webhook.mjs --expired         # a signature an hour old
+```
+
+The script computes the HMAC itself, from Node's standard library. That is
+deliberate: if the only client that ever signed a request were the server, a
+mistake in the contract would be symmetric and invisible.
+
+### How a delivery is authenticated
+
+```mermaid
+sequenceDiagram
+  participant P as Card provider
+  participant V as Webhook verifier
+  participant I as WebhookIntegration
+  participant DB as PostgreSQL
+
+  P->>V: POST with x-limaz-webhook-id, timestamp, signature
+  V->>V: is the timestamp within tolerance?
+  alt outside the window
+    V-->>P: 401 (replay protection)
+  end
+  V->>I: look up the delivery id
+  Note over V,I: untrusted lookup input - it selects a secret,<br/>it proves nothing
+  I->>I: AES-256-GCM decrypt, company id as AAD
+  V->>V: HMAC-SHA256 over timestamp + "." + RAW BODY
+  V->>V: constant-time compare
+  alt no match, or unknown delivery id
+    V-->>P: 401 (one shape for every cause)
+  end
+  Note over V: the company is now the one whose secret verified
+  V->>DB: INSERT webhook_events, committed
+  V-->>P: 202 ACCEPTED
+```
+
+**The company comes from the signature, never from the payload.** The delivery
+id in the header is *untrusted lookup input* - it selects which secret to verify
+against and proves nothing. An attacker naming another company's delivery id is
+checked against that company's secret, which they do not hold. There is no
+company field in the event schema at all, so there is none to ignore.
+
+**The signature covers the RAW bytes.** `rawBody: true` in `main.ts` keeps
+them. `JSON.parse` followed by `JSON.stringify` is not the identity function -
+it normalises whitespace, drops formatting and renders `1.0` as `1` - so a
+verifier built on the parsed object fails every pretty-printed delivery and,
+far worse, can be made to verify a body that differs from the one the
+application then acts on.
+
+### The three timestamps, which are not the same thing
+
+| | What it is | What bounds it |
+|---|---|---|
+| **Signature timestamp** | When this HTTP request was signed | `WEBHOOK_TOLERANCE_SECONDS`, default 300. Replay protection |
+| **Transaction time** (`spentAt`) | When the money was spent | 90 days back, 5 minutes forward. Also the frequency window |
+| **Processing time** | When a worker evaluated it | Recorded. Never used to decide anything |
+
+A payment from last Tuesday, redelivered this morning because the provider was
+down, is **legitimate**. Rejecting it because `spentAt` is old would drop real
+expenses; accepting a week-old *signature* would make a captured request
+replayable for a week.
+
+### Why the signing secret is encrypted, when API keys are hashed
+
+HMAC verification needs the **key material**. The provider never sends the
+secret - it sends a MAC computed with it, and checking that means computing the
+same MAC. No digest can stand in: HMAC keyed with `sha256(secret)` is a
+different function and would never match.
+
+So it is stored reversibly, with AES-256-GCM, and the key lives in
+`WEBHOOK_ENCRYPTION_KEY` - process configuration, never the database. A stolen
+dump is inert without it. The company id is the additional authenticated data,
+so a secret copied into another company's row fails to decrypt rather than
+quietly working for the wrong tenant.
+
+This is **genuinely weaker than hashing** and is recorded as R-35 rather than
+presented as equivalent. The production answer is an external KMS.
+
+### Asynchronous processing
+
+```mermaid
+sequenceDiagram
+  participant P as Card provider
+  participant API as Webhook endpoint
+  participant DB as PostgreSQL
+  participant W as Worker
+  participant S as ExpenseSubmissionService
+
+  P->>API: signed delivery
+  API->>DB: INSERT event, status PENDING
+  API-->>P: 202 accepted for processing
+  Note over API,P: a 2xx is a PROMISE. It is sent after the<br/>commit, never before
+
+  loop every poll interval
+    W->>DB: UPDATE ... FOR UPDATE SKIP LOCKED, attempts + 1
+    DB-->>W: one claimed event, or nothing
+  end
+
+  W->>S: submit(companyId, dto, CARD_WEBHOOK)
+  S->>DB: advisory lock then evaluate then INSERT expense
+  DB-->>S: expense, rule hits, review if REVIEW
+  S-->>W: SubmissionResult
+  W->>DB: status PROCESSED, expenseId recorded
+```
+
+A durable PostgreSQL inbox rather than Redis or BullMQ. One store, so
+"accepted" and "queued" are the same fact, written in the transaction that
+answers the provider - there is no window in which they can disagree. The costs
+are real: polling rather than push, one database doing two jobs, and no
+scheduling features beyond `nextAttemptAt` (R-37).
+
+Workers claim with `FOR UPDATE SKIP LOCKED`, so two of them never get the same
+event. `attempts` is incremented **as part of claiming**, so an event that
+crashes the worker every time still advances towards its bound.
+
+### Two deduplication guarantees, and why both are needed
+
+```mermaid
+sequenceDiagram
+  participant P1 as Delivery 1
+  participant P2 as Delivery 2
+  participant DB as PostgreSQL
+
+  Note over P1,P2: the provider retried before the first answer arrived
+
+  P1->>DB: INSERT (companyId, evt_8f2c1)
+  P2->>DB: INSERT (companyId, evt_8f2c1)
+  DB-->>P1: committed
+  DB-->>P2: 23505 unique_violation
+  Note over P2: the constraint is the authority -<br/>a check-then-insert would let both pass
+
+  P2->>DB: SELECT the winner, compare payload hashes
+  alt the same payment
+    DB-->>P2: 202 DUPLICATE, nothing created
+  else the same id, a different payment
+    DB-->>P2: 409 event_payload_conflict
+  end
+```
+
+```
+DELIVERY deduplication   unique (companyId, providerEventId)
+  stops a redelivered event being PROCESSED twice
+
+EXPENSE idempotency      unique (companyId, source, externalId)
+  stops two different events about one transaction creating two expenses
+```
+
+An event id identifies a *delivery*; a transaction id identifies a *payment*.
+The assessment's guarantee is that each **transaction** becomes exactly one
+expense, so the expense's `externalId` is the transaction id.
+
+The event's payload hash deliberately **excludes** `createdAt`, the signature
+timestamp and the signature. A legitimate replay is signed afresh, so those
+change while the payment has not - folding them in would make every retry look
+like a conflict and the provider could never successfully redeliver anything.
+
+**Why `source` joined the expense key.** A provider's `transactionId` is chosen
+by somebody the company's backend has never spoken to, and a reserved prefix
+cannot separate the namespaces because an ordinary client picks the *whole*
+`externalId` itself. This weakens nothing: for an API caller the source is
+always `API`, so the key is exactly as unique as it was.
+
+### Worker crash recovery
+
+```mermaid
+sequenceDiagram
+  participant W1 as Worker, then it dies
+  participant DB as PostgreSQL
+  participant W2 as The next attempt
+
+  W1->>DB: claim event, status PROCESSING, claimedAt now
+  W1->>DB: submit -> expense COMMITS
+  Note over W1: process dies here. The event is still<br/>PROCESSING and knows nothing about the expense
+
+  Note over DB: the lease expires
+
+  W2->>DB: claim rows whose claimedAt is older than the lease
+  DB-->>W2: the same event, attempts now 2
+  W2->>DB: submit the same transaction again
+  DB-->>W2: the EXISTING expense, duplicate true
+  Note over DB: no second expense, no second review,<br/>nothing added to a frequency window
+  W2->>DB: status PROCESSED, the original expenseId
+```
+
+The window that matters: the expense transaction commits, then the process dies
+before the event row is marked processed. The lease expires, another attempt
+claims it, and `submit` finds the existing expense and returns the original
+decision - no second rule hit, no second review, nothing added to a frequency
+window.
+
+**This is at-least-once processing with idempotent effects.** Exactly-once
+delivery over a network does not exist and is not claimed.
+
+### Retries, and what is terminal
+
+| Failure | Treatment |
+|---|---|
+| A 4xx from the submission service - wrong currency, `spentAt` outside the window, a conflicting transaction id | **Terminal immediately.** A property of the event, so the hundredth attempt fails for the reason the first did |
+| Anything else - a dropped connection, a restart mid-flight | **Retried**, with exponential backoff in a column rather than a sleep, bounded by `WEBHOOK_MAX_ATTEMPTS` |
+| An event type this service does not handle | Stored as `IGNORED`, answered 2xx. The provider retries until it gets one, so refusing forever would be an infinite loop |
+
+`lastError` is **sanitised where it is written** - the API's own message, never
+a stack trace or a query - because it is rendered in an administrator's browser.
+
+### What happens when the queue is down
+
+The queue is a table in the same PostgreSQL, so "the queue is down" and "the
+database is down" are the same event:
+
+- **Acceptance fails too**, so no 2xx is returned, so the provider keeps
+  retrying. Nothing is lost, because the promise a 2xx makes is never made.
+- **In-flight processing rolls back.** The event stays `PROCESSING` with an old
+  `claimedAt` and is reclaimed when the lease expires.
+- **On recovery the worker resumes**, in `nextAttemptAt` order.
+
+With a separate queue the answer would be worse: the row could commit while the
+enqueue failed, leaving an event that is accepted and will never be processed.
+
+### How you would find events the provider never delivered
+
+**This system cannot, on its own** - and that is worth saying plainly rather
+than implying otherwise. An event that never arrived leaves no trace here.
+
+Three approaches, by cost (R-38):
+
+1. **An id-gap check**, only if the provider's ids are sequential per company.
+   The assessment's `evt_8f2c1` gives no reason to think they are.
+2. **A reconciliation job** against the provider's "list transactions" API for a
+   window, comparing against `webhook_events` and submitting what is missing
+   through the same processor. This is the real answer, and it needs a provider
+   API this integration does not have.
+3. **A liveness alert**: no event from a company in N hours is either a quiet
+   period or a broken integration. Cheap, weak, genuinely useful.
+
+### The sandbox payment simulator
+
+```mermaid
+flowchart TD
+  SIM["Payment simulator<br/>platform admin only"]
+  FLAG{"SANDBOX_SIMULATOR_ENABLED"}
+  BUILD["Build the provider event<br/>server side, fixed destination"]
+  SIGN["Sign with the company's secret<br/>in process, never in the browser"]
+  HTTP["Real HTTP POST to<br/>/v1/webhooks/card-transactions"]
+  VERIFY["The same verifier a real<br/>provider faces"]
+  INBOX[("Event inbox")]
+  WORKER["Worker"]
+  ENGINE["The same policy engine"]
+  DASH["Manager dashboard<br/>and review queue"]
+
+  SIM --> FLAG
+  FLAG -- "off" --> NOPE["404 - the feature does not exist here"]
+  FLAG -- "on" --> BUILD
+  BUILD --> SIGN
+  SIGN --> HTTP
+  HTTP --> VERIFY
+  VERIFY -- "refused" --> SHOWN["Shown as a refusal.<br/>Nothing stored"]
+  VERIFY -- "accepted" --> INBOX
+  INBOX --> WORKER
+  WORKER --> ENGINE
+  ENGINE --> DASH
+```
+
+An administrator-only tool that signs a synthetic event and **delivers it over
+HTTP to the real endpoint**. It does not call `ExpenseSubmissionService`, does
+not insert an event, and does not compute an expected decision in the browser -
+every outcome on screen is read back from the row the server wrote. If
+signature verification broke, every preset would start failing.
+
+| Property | How |
+|---|---|
+| No SSRF | The destination is built from `API_PORT` and a constant path on the loopback interface. There is no destination parameter to override |
+| The secret never leaves the server | Signing happens in-process. The browser could not produce a valid signature if it tried |
+| Off in production | `SANDBOX_SIMULATOR_ENABLED`, an **explicit** flag rather than `NODE_ENV` - the Docker image sets `NODE_ENV=production` on a laptop too. Enforced in the service, so a disabled sandbox answers 404 to a direct API call |
+| No card data anywhere | The provider's contract has no PAN, expiry or CVV, so neither does this |
+
+The failure presets send genuinely wrong signatures and genuinely stale
+timestamps to the real verifier. **None of them disables a check.** The blocked
+category preset refuses to run when a company blocks nothing, rather than
+editing the policy to make itself work.
+
+### Webhook events
+
+A bounded, read-only history at **Webhook events** in the admin workspace,
+filterable by company and processing state. There is no retry button: a retry
+would be a delivery the provider never sent, and the worker's schedule is the
+retry mechanism.
+
+A delivery refused for a bad signature is **never stored**, so it is
+deliberately absent there rather than recorded as rejected.
+
+---
+
+### Card webhook administration
+
+```bash
+# Provision or replace a company’s signing secret. Returns it ONCE.
+curl -s -X POST http://localhost:3001/v1/admin/companies/<companyId>/webhook-integration -b cookies.txt -H 'x-limaz-client: 1'
+
+# Read it back: metadata only, never a secret.
+curl -s http://localhost:3001/v1/admin/companies/<companyId>/webhook-integration -b cookies.txt -H 'x-limaz-client: 1'
+
+# What the providers actually delivered.
+curl -s 'http://localhost:3001/v1/admin/webhook-events?status=FAILED&limit=10' -b cookies.txt -H 'x-limaz-client: 1'
+```
+
+```powershell
+$s = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+Invoke-RestMethod -Uri http://localhost:3001/v1/auth/login -Method Post -WebSession $s `
+  -Headers @{ 'x-limaz-client' = '1'; origin = 'http://localhost:3000' } `
+  -ContentType 'application/json' `
+  -Body '{"email":"admin@limaz.test","password":"PlatformAdmin!2026"}'
+
+Invoke-RestMethod -Uri http://localhost:3001/v1/admin/webhook-events -WebSession $s `
+  -Headers @{ 'x-limaz-client' = '1' } | ConvertTo-Json -Depth 4
+```
 
 ## Business rules
 
@@ -570,6 +1084,32 @@ the other.
 
 **Negative control:** remove `AND state = 'OPEN'` and the second resolution
 silently overwrites the first.
+
+### A webhook expense is reviewed like any other
+
+```mermaid
+sequenceDiagram
+  participant E as Webhook expense
+  participant M as Company manager
+  participant API as LIMAZ API
+  participant DB as PostgreSQL
+
+  Note over E: decision REVIEW, status PENDING_REVIEW,<br/>one open review
+
+  M->>API: GET /v1/reviews?state=OPEN
+  API-->>M: the queue, scoped to their company
+  M->>API: POST /v1/reviews/:id/resolve, decision APPROVE
+  API->>DB: UPDATE reviews SET state RESOLVED WHERE state OPEN
+  alt one row changed
+    DB->>DB: expense status becomes APPROVED
+    DB-->>API: resolved
+    API-->>M: 200
+  else zero rows changed
+    DB-->>API: somebody else already decided
+    API-->>M: 409, naming who and what
+  end
+  Note over DB: the automated decision stays REVIEW.<br/>History is not rewritten
+```
 
 ### What this does *not* claim
 
@@ -764,6 +1304,22 @@ authorized somewhere else.
 `DATABASE_URL` from a secret manager, never set `SEED_DEV_DATA`, and retire the
 seeded development credentials - they are published in this repository.
 
+### The card webhook's own authentication
+
+It is the one caller that can present neither an API key nor a cookie, so it
+authenticates on a per-request signature instead.
+
+| Control | What it stops |
+|---|---|
+| HMAC-SHA256 over `${timestamp}.${rawBody}` | A forged or modified delivery. The **raw bytes**, so a re-serialised body does not verify |
+| Constant-time comparison, after a shape check | Recovering a valid signature one character at a time from response timings. The shape check comes first because `timingSafeEqual` throws on a length mismatch, which would itself be an oracle |
+| A timestamp window, both directions | Replaying a captured request - including one signed far in the future, which a past-only bound would leave replayable until that date arrives |
+| The company taken from the verifying integration | A delivery claiming to be another tenant. The body has no company field at all |
+| A dummy HMAC for unknown delivery ids | Learning which delivery ids exist from how fast the refusal arrives |
+| One 401 shape for every cause | Learning which part of the request was wrong |
+| `@WebhookExempt()` on exactly one route, asserted by a test | The exemption spreading to a route that *does* read a cookie |
+
+
 ---
 
 ## Testing
@@ -781,19 +1337,20 @@ npm test
 ```
 
 ```
-@limaz/api   Test Suites: 34 passed, 34 total      Tests: 487 passed
+@limaz/api   Test Suites: 39 passed, 39 total      Tests: 617 passed
 @limaz/web   Test Suites:  2 passed,  2 total      Tests:  30 passed
 ```
 
 | Command | What it covers |
 |---|---|
-| `npm test --workspace @limaz/api` | 487 tests against **real PostgreSQL** |
+| `npm test --workspace @limaz/api` | 617 tests against **real PostgreSQL** |
 | `npm test --workspace @limaz/web` | 30 tests over the two pure frontend modules |
 | `TZ=America/New_York npm test --workspace @limaz/web` | proves the display timezone is fixed rather than inherited |
 | `npm run lint`, `npm run typecheck`, `npm run build` | static gates |
 | `npm run verify` | all three, both workspaces |
 | `node scripts/check-contrast.mjs` | prints all 15 design-token contrast ratios |
 | `bash scripts/verify-f00.sh` … `verify-f02-1.sh` | acceptance against a **rebuilt** Docker stack |
+| `node scripts/send-card-webhook.mjs` | signs and delivers a real webhook, independently of this codebase |
 
 ### The safe order
 
@@ -891,6 +1448,26 @@ Only after a measured problem would a Redis counter be worth it, and it trades
 exactness for throughput: the advisory lock gives an exact count, Redis gives a
 fast approximate one.
 
+### The webhook worker, in a real deployment
+
+Today it runs inside the API process, started on application bootstrap and
+stopped on `SIGTERM`. That is right for one container and wrong for several:
+*n* API replicas would each poll, which is safe - `FOR UPDATE SKIP LOCKED`
+means they cannot claim the same event - but wasteful, and queue work would
+compete with request handling for the same connections.
+
+Separating it needs **no code change**. The same image with
+`WEBHOOK_WORKER_ENABLED=false` on the API replicas and `true` on one or more
+worker replicas is the whole of it, because the claim is already written for
+concurrent workers (F12-T73) and recovery is already a lease timestamp rather
+than anything held in a process.
+
+What would need designing: a dead-letter view for `FAILED` events somebody
+should actually look at, jitter on the backoff once there is a herd to spread
+(R-37), and the reconciliation job that finds events the provider never sent
+(R-38).
+
+
 ---
 
 ## Known limitations
@@ -905,18 +1482,19 @@ None is a mandatory requirement of the assessment.
 | R-28 | Keyset pagination has no backward cursor | A true backward keyset needs a second ordering and a second query path | "Older" walks a client-held trail; a reload loses it | Bidirectional cursors |
 | R-30 | 3 high + 19 moderate `npm audit` findings | All in dev tooling. The vulnerable `effect` symbol is not even present in the package that imports it; npm would not apply an override, and its only offered fix is a major downgrade | None measured on any request path | A Prisma release off the pinned `effect` |
 | R-31 | Concurrent policy edits are last-write-wins | The assessment requires conflict handling for **reviews**, not for policy edits; a version column would be machinery for a race nobody has | A silently reverted setting | An `updatedAt` precondition |
-| R-32 | A new company has no manager | The alternatives are an invented password or an invitation subsystem | Flagged expenses wait | A provisioning endpoint once credential delivery exists |
+| R-36 | A manager’s password cannot be changed or reset in the application | A reset path needs email delivery, or a route that overwrites a credential. Neither is in scope | An account keeps the password it was created with | Administrator-set replacement, or an invitation flow |
 | R-33 | API key issuance is not idempotent | The caller is a human in a browser, and the orphan key is visible in the list | A credential nobody tracks | An idempotency key |
 | R-34 | The `Origin` check refuses a different spelling of the same host | Exact comparison is what makes the layer worth having | A confusing `403` | Documented in the quick start |
+| R-35 | Webhook signing secrets are encrypted, not hashed | HMAC verification needs the key material; no digest can stand in | An attacker needs **both** the database and `WEBHOOK_ENCRYPTION_KEY` | An external KMS, where the key never enters the process |
+| R-37 | The retry backoff has no jitter, and the worker runs in the API process | With one worker and an inbox of tens of rows there is no herd to spread | Only at a volume this deployment does not see | Full jitter, and the worker as its own process - which needs no code change |
+| R-38 | An event the provider never delivered leaves no trace | Reconciliation needs a provider API this integration does not have | Something is silently absent, which is harder to notice than something wrong | A reconciliation job; see the webhook section above |
 | - | No load testing; no screen-reader or WCAG conformance audit | Out of scope; stated rather than implied | Claims are limited accordingly | |
 
 ## With more time
 
-1. **The optional card webhook** (section 10). Per-company HMAC-SHA256 over the
-   raw body, tenant resolution without trusting the payload, a unique
-   constraint on `transactionId` for exactly-once expense creation, and
-   asynchronous processing. Queue-down behaviour and finding events the
-   provider never delivered need designing, not just coding.
+1. **Reconciliation against the card provider** (R-38), which is the one part
+   of the webhook bonus that is explained rather than built - because it needs
+   a provider API this integration does not have.
 2. **Close R-11** with sliding sub-window evaluation.
 3. **Rate limiting** on login and per API key, plus a Content-Security-Policy
    (risks R-19, R-18).
@@ -997,24 +1575,26 @@ apps/
     src/reviews/          Review listing and resolution
     src/policy/           A company's own policy settings
     src/dashboard/        The single aggregate query
-    src/admin/            Companies and the API key lifecycle
+    src/admin/            Companies, managers and the API key lifecycle
+    src/webhooks/         Card webhook intake: HMAC, the event inbox, the worker
+    src/simulator/        The sandbox simulator and the event history (admin only)
     prisma/               Schema, migrations, the idempotent seed
-    test/                 487 tests against real PostgreSQL
+    test/                 617 tests against real PostgreSQL
   web/                    Next.js App Router
     app/api/[...path]/    The same-origin proxy
     app/(app)/dashboard/  Overview, expenses, reviews, policy
-    app/(app)/admin/      Companies and keys
+    app/(app)/admin/      Companies, managers, keys, simulator, webhook events
 docs/
   adr/                    Eleven architecture decision records
   architecture/           Overview, data model, submission, policy, review lifecycle, frontend
-  features/               One document per implementation feature, F00 to F08
+  features/               One document per implementation feature, F00 to F12
   testing/                Test matrices with actual results, manual cycles, the safe order
   security/               The endpoint authorization matrix
   interview/              Five defence questions per feature
-  risks.md                34 risks, each with the evidence behind its status
+  risks.md                37 risks, each with the evidence behind its status
   requirements-traceability.md   Every assessment requirement mapped to evidence
-scripts/                  Acceptance scripts and the contrast checker
-AI_LOG.md                 Tools, prompts, and 50 recorded defects
+scripts/                  Acceptance scripts, the contrast checker, the webhook sender
+AI_LOG.md                 Tools, prompts, and 62 recorded defects
 ```
 
 ### Build history
@@ -1035,6 +1615,10 @@ Each feature was implemented, tested and reviewed before the next began.
 | F08 | Platform administration and the key lifecycle | 42 tests |
 | **F09** | Integration, security hardening, regression | **5 defects found and fixed** |
 | **F10** | Documentation and submission readiness | this README |
+| **v1.0.0-core** | **The mandatory assessment, verified and tagged** | **517 tests, 63/63 acceptance** |
+| F11 | Company manager provisioning, closing R-32 | 30 tests |
+| F12 | The optional card webhook bonus and the sandbox simulator | 100 tests |
+| F13 | Bonus integration, regression and delivery | this section |
 
 ---
 
@@ -1042,7 +1626,7 @@ Each feature was implemented, tested and reviewed before the next began.
 
 Everything in this repository was written with Claude Code, and everything in
 it is mine to defend. [`AI_LOG.md`](AI_LOG.md) records the tools, the shape of
-the prompts, and **50 defects** - each with how it was noticed, what fixed it,
+the prompts, and **62 defects** - each with how it was noticed, what fixed it,
 and what stops it coming back. They include a floating-point bug I asserted in
 a test that does not actually happen, an advisory lock that hid the very
 mechanism its tests claimed to prove, a layout that leaked an admin heading
@@ -1056,7 +1640,9 @@ during my own verification.
 | | |
 |---|---|
 | [`docs/requirements-traceability.md`](docs/requirements-traceability.md) | every assessment requirement → implementation → evidence → status |
-| [`docs/risks.md`](docs/risks.md) | 34 risks, each with the evidence behind its status |
+| [`docs/risks.md`](docs/risks.md) | 37 risks, each with the evidence behind its status |
+| [`docs/features/F11-manager-provisioning.md`](docs/features/F11-manager-provisioning.md) | manager provisioning, and why the password is typed rather than generated |
+| [`docs/features/F12-card-webhook.md`](docs/features/F12-card-webhook.md) | the card webhook bonus in full: the contract, the nine architecture decisions, and what is not built |
 | [`docs/adr/`](docs/adr/) | the eleven decisions, with the alternatives rejected |
 | [`docs/security/endpoint-authorization.md`](docs/security/endpoint-authorization.md) | every route, every caller, measured |
 | [`docs/testing/`](docs/testing/) | per-feature matrices with actual results, and manual cycles |

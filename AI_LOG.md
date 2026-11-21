@@ -1183,6 +1183,338 @@ acceptance script nobody runs (AI_LOG 45) or a recovery path nobody injects
 (AI_LOG 46).
 
 
+## Defects found during F11
+
+### 51. Email validation ran before the trim that would have made it valid
+
+The manager creation schema was written in the order it reads naturally:
+
+```ts
+email: z.email('...').max(320).trim().toLowerCase()
+```
+
+Every test passed except the one that pasted an address the way a person
+actually does, with the whitespace a copy from a spreadsheet or an email
+client carries:
+
+```
+'  MiXeD-abc@F11.TEST  '  ->  400 invalid_request
+```
+
+`.trim()` and `.toLowerCase()` are string **transforms**; `z.email()` is a
+separate **schema**. Chained that way, the format check runs against the raw
+input and refuses the value for whitespace it was about to remove.
+
+**Fix:** pipe instead of chain, so the transforms run first.
+
+```ts
+email: z.string().max(320).trim().toLowerCase().pipe(z.email('...'))
+```
+
+Found by **a test written to assert the normalisation claim end to end**
+(F11-T07) rather than by reading the schema - which I had read, twice, and
+which looks correct until you know that two of those four calls build a
+different kind of thing from the other two.
+
+### 52. A 404 that was my test harness, not the product
+
+F11's closing claim is that an account created through the API can resolve a
+real review. The test did exactly that and the resolve returned **404**.
+
+The obvious reading is a routing or authorization defect. It was neither:
+`createF08TestApp` composes `AdminModule`, `AuthModule` and `ExpensesModule`,
+and **not** `ReviewsModule`. The route did not exist in that application.
+
+Then, with the module added, the same call returned **400** - because I had
+sent `{ outcome: 'APPROVED' }`, and the real DTO takes `{ decision: 'APPROVE' }`.
+I had written the manager's vocabulary rather than the schema's.
+
+**Fix:** a dedicated `f11-test-app.ts` that includes `ReviewsModule`, with a
+comment saying why, and the correct request body.
+
+Both are my mistakes rather than the AI's, and both are worth recording
+because they share a failure mode with the product defects above: **a harness
+that is wrong looks exactly like a product that is broken**, and the cheapest
+way to tell them apart is to check what the harness actually wired up before
+reaching for the source.
+
+### 53. I broke my own baseline verification by editing a file it was building
+
+Three F00 acceptance checks failed in a run that had passed an hour earlier:
+
+```
+FAIL  F00-T02  code=000 body={"status":"ok",...}
+FAIL  F00-T03  api RestartCount=unknown
+FAIL  F00-T05  proxy did not return a healthy api response
+```
+
+`code=000` with a healthy body in the file is the tell: curl never connected,
+and the body was stale from the previous run. The cause was mine twice over.
+`verify-f00.sh` runs `docker compose down -v && up -d --build`, so it builds
+**the working tree** - and I had edited `schema.prisma` while it ran, giving
+the rebuilt image a Prisma client expecting a column no migration had created.
+Then, stopping that run mid-`docker compose`, I left containers half-created
+for the next one.
+
+**Fix, and the rule that comes out of it:** `git stash`, run the four
+acceptance scripts against the clean core tree, tag the verified commit, then
+restore the work in progress. Re-run on a settled stack: **18/18**.
+
+The three failures were never product defects. They were me, holding the thing
+I was measuring.
+
+
+## Defects found during F12
+
+### 54. Prisma generated a migration that could not run
+
+`prisma migrate diff` produced the webhook migration's SQL, and it looked
+complete. It was not:
+
+```sql
+-- what it emitted
+ALTER TABLE "expenses" ADD COLUMN "source" "ExpenseSource" NOT NULL DEFAULT 'API';
+-- what it did NOT emit
+CREATE TYPE "ExpenseSource" AS ENUM ('API', 'CARD_WEBHOOK');
+```
+
+It created `WebhookEventStatus` and omitted `ExpenseSource`, while still
+referencing it. On the development database the enum did not exist either - I
+checked `pg_type` rather than assuming - so the file would have failed on
+**every** fresh database, which is exactly what a reviewer runs.
+
+**Fix:** the migration is written by hand, with both `CREATE TYPE` statements
+in dependency order and a comment saying why it is not generated.
+
+**How it was found:** by reading the generated SQL before running it, and then
+asking the database whether the type it referenced actually existed.
+
+### 55. A typo in the worker's claim query killed the whole API
+
+The claim query was written in snake_case out of habit:
+
+```sql
+WHERE status = 'PENDING' AND next_attempt_at <= now()
+```
+
+The Prisma model maps only the TABLE (`@@map("webhook_events")`), not its
+fields, so the real column is `"nextAttemptAt"`. PostgreSQL answered
+`42703 column "next_attempt_at" does not exist`.
+
+That is an ordinary mistake. What it did is not:
+
+```
+api-1 | Node.js v22.23.5
+api-1 | [entrypoint] applying database migrations
+```
+
+The API **exited and restarted in a loop**, health check and all, with the
+real error buried above a restart. The rejection came from inside a
+`setTimeout`, where nothing was waiting on it, and Node treats an unhandled
+rejection as fatal.
+
+**Two fixes, and the second matters more than the first.** The column names
+are now quoted camelCase. And the tick is wrapped:
+
+```ts
+void this.tick()
+  .catch((error) => { this.logger.error('...tick failed; the next tick will retry.', ...); })
+  .finally(() => this.schedule());
+```
+
+**A background worker must never be able to stop the application.** Before
+this, any transient database error during a poll would have taken down an API
+that was otherwise serving requests perfectly well.
+
+**How it was found:** `docker compose up` reported the stack unhealthy, and
+the log showed the error - but only after scrolling past a restart.
+
+### 56. The replay preset could never demonstrate a replay
+
+The simulator's Replay button re-sent the form with the previous event id. It
+always answered **409 `event_payload_conflict`**.
+
+The server was right. Payload identity covers every business field including
+`spentAt`, which defaults to "now" - so a minute later the same event id
+described a genuinely different payment, and refusing it is the correct
+behaviour the conflict case exists for.
+
+The preset was wrong about what a replay IS. A provider replaying an event
+re-sends the bytes it sent before; it does not rebuild them from a form that
+has moved on.
+
+**Fix:** a `replayOf` parameter. The server reads the stored payload back and
+re-signs it, which is the only thing that deserves to be called a redelivery.
+`createdAt` is regenerated and the signature is fresh - both are delivery
+metadata and neither is in the payload hash, which is precisely why the
+redelivery is still recognised as a duplicate.
+
+The standalone script hit the same trap, and it has no server state to read
+back from - so after a successful delivery it now **prints the exact command
+that redelivers that event**, every field included.
+
+**How it was found:** running the preset and reading the status code instead
+of assuming the button did what its label said.
+
+### 57. Every valid signature failed in the tests, and the verifier was fine
+
+The first run of the intake suite was a clean split: **every case expecting a
+202 failed with 401, and every case expecting a refusal passed.**
+
+That pattern is a verifier that never verifies, and the live stack had
+already accepted a signed delivery from a shell script - so the product was
+not the suspect. The test client was:
+
+```ts
+request(app).post(path).set('content-type', 'application/json').send(rawBody)
+```
+
+With a JSON content type, supertest **re-serialises a Buffer**:
+
+```
+bytes seen: {"type":"Buffer","data":[123,34,97,34,58,49,125]}
+expected  : {"a":1}
+```
+
+So the bytes on the wire were not the bytes that had been signed - which is,
+with some irony, the exact failure mode the feature exists to prevent.
+
+**Fix:** serialise once to a **string** and send that string.
+
+**How it was found:** by writing a six-line throwaway HTTP server and printing
+what supertest actually transmitted, rather than re-reading the verifier for a
+third time.
+
+### 58. An oversized request body was a 500, on every endpoint, since F03
+
+Testing the webhook's size limit produced a 500. I checked whether it was new:
+
+```
+POST /v1/expenses  (400 KB body)
+status=500 {"error":"internal_error","message":"An unexpected error occurred."}
+```
+
+**It was not new.** `body-parser` raises a `PayloadTooLargeError` that carries
+`status: 413` but is **not** an `HttpException`, so the global filter's
+catch-all flattened it to 500 - for every POST in the application, since F03.
+
+The assessment says in as many words: *"Bad input is rejected cleanly and
+never causes a server error."*
+
+**Fix:** the filter recognises a body-parser rejection by shape - matched on
+`type`, not `instanceof`, because importing a transitive dependency's error
+class here would be a dependency nothing else in the codebase names - and
+answers 413, 400 or 415 with a message written here rather than copied from
+the library, whose text names the limit and its internals.
+
+A second, smaller thing fell out of the same test: a malformed JSON body
+answered `"error": "Bad Request"`, Nest's reason phrase, where every other
+400 in this API says `invalid_request`. One endpoint publishing two
+vocabularies makes a client branch on which layer answered, so the filter now
+keeps an error code only when it is `lower_snake_case`.
+
+**How it was found:** a webhook test asserting "not a 500", then checking
+whether the problem belonged to F12 at all.
+
+### 59. A shared test fixture made the policy engine look broken
+
+Several worker tests failed with an extra `FREQUENCY` rule hit on expenses
+that were testing the amount limit.
+
+The cause was my fixture, not the engine: `cardEvent()` defaulted
+`cardholderId` to `'emp-7'`, so by the tenth case that employee had enough
+expenses inside the window to trip a rule nobody was testing.
+
+**Fix:** the default is now unique per event, and a test that cares about an
+employee's history has to say so. The frequency test already did.
+
+**The lesson is one this project keeps relearning:** a shared default in a
+fixture is shared state, and shared state in a suite that asserts on counts
+produces failures that read as product defects.
+
+
+## Defects found during F13
+
+### 60. The idempotency constraint name went stale, and the tests caught it
+
+Adding `source` to the expense unique key renamed the index:
+
+```
+expenses_companyId_externalId_key  ->  expenses_companyId_source_externalId_key
+```
+
+`EXPENSE_IDEMPOTENCY_CONSTRAINT` is compared against the name **PostgreSQL
+reports**, so a stale value would make every genuine conflict fall through as
+an unrecognised error and surface as a **500** - on the single most important
+path in the application.
+
+Three suites failed immediately: the F03 negative control, the constraints
+spec and the schema spec. Each of them existed to assert something about that
+exact name.
+
+**Fix:** the constant, the two assertions, and the negative control's index
+recreation and duplicate-cleanup SQL, which both partition by the key columns.
+
+**Why it is worth recording even though nothing shipped:** this is the test
+suite doing precisely what it was written for. The failure arrived as
+`[201, 500]` where `[201, 409]` was expected, which is the exact symptom a
+user would have seen. A system without that negative control would have
+shipped a 500 on a concurrent retry.
+
+### 61. A migration that only worked because the database already had the enum
+
+Covered as AI_LOG 54, and repeated here because F13's fresh-install run is
+where it would have surfaced for a reviewer rather than for me. The hand-
+written migration was verified against a genuinely empty database in an
+isolated compose project, not against the development one that had been
+migrated incrementally all day.
+
+### 62. The guard against overlapping test runs produced a false failure
+
+The F13 regression ran all four acceptance scripts back to back. F00 passed
+18/18, F01 passed 11/11, and **F02 reported `F02-jest suite failed`** - while
+the same suite, run on its own seconds later, passed **617/617**.
+
+The script swallows the output, so reproducing it directly was the only way to
+see what it actually said:
+
+```
+Another test run already owns limaz_test (pid 201).
+```
+
+Pid 201 no longer existed by the time I looked for it.
+
+`acquireSuiteLock` used `pg_try_advisory_lock`, which answers **immediately**.
+That is right for the case the lock was built for - two runs genuinely active
+at once, deleting each other's database (AI_LOG 36). It is wrong for runs that
+are merely **adjacent**. When Jest exits, PostgreSQL has not necessarily
+noticed: the connection is closed by the operating system a moment later, and
+the advisory lock is released then. So F01's connection was still alive when
+F02's run asked for the lock.
+
+The irony is the point. The mechanism that exists because overlapping runs
+destroyed each other became a generator of failures that look exactly like
+product defects - which is what it cost here, in the final regression of the
+whole project.
+
+**Fix:** a bounded wait before refusing. Thirty seconds, polling
+`pg_try_advisory_lock` rather than switching to the blocking
+`pg_advisory_lock`, so the refusal can still report **who** holds it instead of
+hanging with no diagnosis.
+
+**Verified in both directions**, because half a fix here is worse than none:
+
+| | |
+|---|---|
+| Lock released during the wait | `[suite-lock] limaz_test is held; waiting up to 30s...` then acquires, and the suite passes |
+| Lock held past the wait | Refuses, names the pid, and prints the `pg_terminate_backend` command - the protection still works |
+
+**How it was found:** by refusing to accept "probably flaky". The suite had
+passed twice that hour, so the cheap answer was to re-run it and move on. The
+cost of that would have been a guard that silently fails any chained
+verification from now on.
+
+
 ## Running record
 
 | Date | Phase | Notes |
@@ -1209,3 +1541,6 @@ acceptance script nobody runs (AI_LOG 45) or a recovery path nobody injects
 | 2026-11-21 | F08 implementation | Platform administration: companies, onboarding in one transaction, and the API key lifecycle. Rotation uses a conditional update rather than an advisory lock, because the invariant is one row rather than F04's count across many. Two defects: a key label derived from the build instead of the deployment, and - in my own verification - a live key written into a screenshot by a redaction that React undid. 42 new tests, 487/487 passing |
 | 2026-11-21 | F09 integration and hardening | Executed the paths earlier reports described. Five defects, four of them things a reviewer would have hit: an acceptance check failing since F02.1, a resolve button left permanently disabled after a failed request, an administrator told "the server did not answer" when the server had refused, a 64-character identifier pushing the expense detail 192px off a 360px screen, and a seed that refused to start once anybody used the application. Both F07-F13 network failure modes injected for real and checked against the database |
 | 2026-11-21 | F10 documentation | README rewritten for a reviewer opening the repository for the first time: quick start, verified credentials, a five-minute walkthrough, API examples, business rules, concurrency with sequence diagrams, security with what each control does NOT do, deployment and scaling with measured query plans, and every accepted limitation with its risk id. The eight decisions answered in full. Submission materials prepared, not sent |
+| 2026-11-21 | F11 implementation | Company manager provisioning, closing R-32. Two admin routes, no migration - the `User` model already carried everything. The administrator chooses the initial password, so the response carries no credential at all. Three defects recorded (51-53), two of them mine rather than the AI's. 30 new tests, 517/517 API passing, verified end to end in the browser: two managers created, a duplicate refused, and the new account signed in to its own workspace |
+| 2026-11-21 | F12 implementation | The assessment's optional card webhook bonus, built only after the core was tagged `v1.0.0-core`. HMAC-SHA256 over the raw request bytes, a per-company secret encrypted with AES-256-GCM rather than hashed (because HMAC needs the key material), a durable PostgreSQL inbox, and a `FOR UPDATE SKIP LOCKED` worker calling the SAME `ExpenseSubmissionService` a company backend reaches. Plus a sandbox simulator that signs server-side and delivers over real HTTP. Six defects recorded (54-59), one of them pre-existing since F03 and found by a webhook test: an oversized body was a 500 on every endpoint. 100 new tests, 617/617 API passing |
+| 2026-11-21 | F13 integration and delivery | Full demonstration through the application (49/49), full regression (647 tests), all four acceptance scripts, fresh installation from a clean checkout, final security audit, eight new Mermaid diagrams rendered before being committed, and the merge to `main` behind the `v1.0.0-core` tag. Three defects recorded (60-62), the last of which was the guard against overlapping test runs refusing a connection that was merely being reaped - a false failure in the project's own verification tooling, found in the final regression and fixed in both directions |

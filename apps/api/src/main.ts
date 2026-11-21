@@ -9,7 +9,19 @@ async function bootstrap(): Promise<void> {
   // process should never reach the point of opening a port.
   const env = loadEnv();
 
-  const app = await NestFactory.create(AppModule);
+  // `rawBody: true` keeps the EXACT bytes of every request body on
+  // `request.rawBody`, alongside the parsed object.
+  //
+  // The card webhook's HMAC signature covers those bytes. `JSON.parse`
+  // followed by `JSON.stringify` is not the identity function - it normalises
+  // whitespace, drops insignificant formatting, re-encodes unicode escapes
+  // and renders `1.0` as `1` - so a verifier built on the parsed object fails
+  // every pretty-printed delivery, and, far worse, can be made to verify a
+  // body that differs from the one the application then acts on.
+  //
+  // The cost is one extra Buffer per request, bounded by the same body-size
+  // limit that already applies. Nothing but the webhook route reads it.
+  const app = await NestFactory.create(AppModule, { rawBody: true });
 
   // There is deliberately NO app.enableCors().
   //
