@@ -258,16 +258,41 @@ A `git clone` of the committed repository into an empty directory, brought up
 as an **isolated compose project** (`-p limaz-fresh`) on its own ports and its
 own volume. The development stack was never touched.
 
-See section 8 results in the F09 report. The documented command is exactly
-what was run:
+The documented command is exactly what was run:
 
 ```bash
 cp .env.example .env
 docker compose up
 ```
 
-(only the three host ports and `APP_ORIGIN` were edited, so the isolated run
-could not collide with the development stack).
+Only the three host ports and `APP_ORIGIN` were edited, so the isolated run
+could not collide with the development stack. **34 checks, 0 failures.**
+
+| Step | Result |
+|---|---|
+| `git clone` of the pushed commit (`08cd518`) | 332 tracked files, 12 MB, **no `node_modules`, no `.env`** |
+| `cp .env.example .env` then `docker compose up --build` | exit 0 |
+| All three services healthy | **632 s from nothing**, image build included |
+| Migrations applied by the entrypoint | **PASS** - from the container log, not inferred |
+| Seed completed by the entrypoint | **PASS** |
+| Seeded rows | 2 companies, 3 users, 2 keys, 2 policies **with different values**, 12 expenses, 3 reviews with 1 open |
+| `/health` | `ok`, database `up` |
+| Anonymous `/` | redirects to `/login`, which serves 200 `text/html` |
+| **Every documented credential** | all three accounts sign in; both documented API keys authenticate and resolve to the right company |
+| A real expense over the limit | `REVIEW`, exactly one review opened |
+| The manager resolves it | 200, the expense becomes `APPROVED` |
+| An identical retry | replays, `duplicate: true` |
+| Tenant isolation on that stack | 404 |
+| **Restart after using the application** | still 2 companies, still 12 seeded expenses, API healthy again |
+| `docker compose down -v` | the isolated volume is gone |
+
+The restart check is the one that matters for AI_LOG 49: it restarts the API
+**after** an expense has been submitted and a review resolved. Before the fix
+that is exactly where the seed refused and the container entered a restart
+loop.
+
+No undocumented manual step was needed. The only prerequisite that genuinely
+requires the reviewer is Docker itself.
 
 ---
 

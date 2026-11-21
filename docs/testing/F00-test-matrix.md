@@ -5,7 +5,10 @@
 **Environment:** Windows 11, Docker 29.5.3, Compose v5.1.4, Node 22.20.0,
 PostgreSQL 17-alpine
 
-**Result: 17 of 17 acceptance checks PASS, 13 of 13 automated tests PASS.**
+**Result: 18 of 18 acceptance checks PASS, 13 of 13 automated tests PASS.**
+
+> F09 split F00-T04 into T04 and T04b after finding the original had been
+> failing since F02.1 (AI_LOG 45). The script has been re-run in full since.
 
 Nothing in this document is marked PASS without an actual execution behind it.
 
@@ -73,16 +76,35 @@ Nothing in this document is marked PASS without an actual execution behind it.
 | **Actual** | Line present |
 | **Status** | **PASS** |
 
-### F00-T04 - Web serves a page
+### F00-T04 - The web root sends an anonymous visitor to the login page
 
 | | |
 |---|---|
 | **Preconditions** | F00-T01 passed |
-| **Steps** | `curl -I http://127.0.0.1:3000/` |
+| **Steps** | `curl -s -o /dev/null -w '%{http_code} %{redirect_url}' http://127.0.0.1:3000/` |
+| **Expected** | A redirect (`307`) to `/login` |
+| **Verification** | HTTP status and `Location` |
+| **Type** | Automated |
+| **Actual** | `307` → `http://127.0.0.1:3000/login` |
+| **Status** | **PASS** |
+
+> **Rewritten in F09.** This originally asserted `200 text/html` on `/`, which
+> was true until F02.1 turned the root into a server-side redirect - to the
+> role's workspace when signed in, to `/login` when not. From that commit the
+> check compared `307` against `200` and **failed**, and nothing ran it again
+> for six features (AI_LOG 45). It now asserts the real contract, and
+> F00-T04b covers the page the redirect lands on.
+
+### F00-T04b - The login page itself is served
+
+| | |
+|---|---|
+| **Preconditions** | F00-T04 passed |
+| **Steps** | `curl -s -o /dev/null -w '%{http_code} %{content_type}' http://127.0.0.1:3000/login` |
 | **Expected** | `200` with `content-type: text/html` |
 | **Verification** | HTTP status and content type |
 | **Type** | Automated |
-| **Actual** | `200 text/html` |
+| **Actual** | `200 text/html; charset=utf-8` |
 | **Status** | **PASS** |
 
 ### F00-T05 - Same-origin proxy reaches the API

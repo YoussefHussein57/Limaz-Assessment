@@ -39,6 +39,9 @@ Summarised rather than pasted verbatim.
 | F01 implementation | Implement the approved schema, migration, seed and tests. Real PostgreSQL. Show executed results |
 | F02 design review | Verify F00 and F01 first. Then compare API keys against sessions, password hashing against token hashing, database sessions against JWT, guards against middleware, explicit tenant scoping against row-level security, role against resource authorization, and HttpOnly against localStorage. Diagrams. No code until approved |
 | F02 implementation | Implement the approved design. Fix the seed security finding first. Real PostgreSQL. Do not commit |
+| F02.1 to F08 | The same shape each time: verify the previous feature rather than assume it, present the design with the alternatives rejected, wait for approval, implement, show executed results. Where I added requirements they went into the design - small open/close transitions rather than none, a walkthrough session after delivery, measuring query plans instead of claiming an index is used |
+| F09 hardening | Close the rows earlier reports marked PARTIAL by actually executing them. Audit every endpoint for tenant isolation and read the queries, not only the decorators. Verify the screenshot incident independently and do not trust a filename. Analyse the dependency advisories; do not run npm audit fix --force. Verify a fresh installation from a clean clone without destroying the development database |
+| F10 documentation | Read the repository as an interviewer opening it for the first time. Rewrite the README for that reader, answer the eight decisions in full, and prepare the submission materials - but send nothing |
 
 I also set two standing rules: explain in Egyptian Arabic in the conversation
 rather than pointing me at a markdown file, and never add AI co-author trailers
@@ -1147,6 +1150,39 @@ starts healthy, the banner still reporting its own 12 expenses while the table
 held 13.
 
 
+## Defects found during F10
+
+### 50. Three README diagrams that would have rendered as "Syntax error"
+
+The README gained four Mermaid diagrams - one architecture flowchart and one
+sequence diagram per concurrency mechanism. They looked right.
+
+Rather than trust that, I extracted all four blocks from the README, served
+them to a real browser and ran `mermaid.parse()` on each. **The flowchart
+passed and all three sequence diagrams failed.**
+
+```
+Parse error on line 5:
+...SELECT by (companyId, externalId) - none
+-----------------------^
+```
+
+A semicolon is a **statement separator** in Mermaid. Every message I had
+written in the natural shorthand of a transaction - `BEGIN; SELECT ...`,
+`INSERT; COMMIT`, `1 row; UPDATE ...; COMMIT` - was being cut in half, and the
+remainder parsed as a new statement.
+
+On GitHub the reader would have seen a red "Syntax error in text" box in place
+of the diagram, three times, on the page that is the primary deliverable.
+
+**Fix:** the semicolons became "then". Re-parsed: 4 of 4 valid.
+
+The lesson is the one this whole phase is about: **a diagram that has never
+been rendered is a diagram that has never been tested** - exactly like an
+acceptance script nobody runs (AI_LOG 45) or a recovery path nobody injects
+(AI_LOG 46).
+
+
 ## Running record
 
 | Date | Phase | Notes |
@@ -1172,3 +1208,4 @@ held 13.
 | 2026-11-21 | F07 implementation | The review UI and policy settings. The backend needed only two endpoints - F05 already guaranteed one resolution, so F07 is about not lying to the manager who loses that race. Pessimistic mutation, a 409 path that refreshes and names the winner, string-arithmetic money conversion. Two defects found and fixed. 23 backend tests, 9 frontend, and a conflict reproduced with two genuinely independent sessions |
 | 2026-11-21 | F08 implementation | Platform administration: companies, onboarding in one transaction, and the API key lifecycle. Rotation uses a conditional update rather than an advisory lock, because the invariant is one row rather than F04's count across many. Two defects: a key label derived from the build instead of the deployment, and - in my own verification - a live key written into a screenshot by a redaction that React undid. 42 new tests, 487/487 passing |
 | 2026-11-21 | F09 integration and hardening | Executed the paths earlier reports described. Five defects, four of them things a reviewer would have hit: an acceptance check failing since F02.1, a resolve button left permanently disabled after a failed request, an administrator told "the server did not answer" when the server had refused, a 64-character identifier pushing the expense detail 192px off a 360px screen, and a seed that refused to start once anybody used the application. Both F07-F13 network failure modes injected for real and checked against the database |
+| 2026-11-21 | F10 documentation | README rewritten for a reviewer opening the repository for the first time: quick start, verified credentials, a five-minute walkthrough, API examples, business rules, concurrency with sequence diagrams, security with what each control does NOT do, deployment and scaling with measured query plans, and every accepted limitation with its risk id. The eight decisions answered in full. Submission materials prepared, not sent |

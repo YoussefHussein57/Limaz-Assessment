@@ -14,6 +14,9 @@ The questions are written to attack **our actual choices**, not textbook theory.
 | [F03 - Expense submission](F03-expense-submission.md) | 5 | Not yet |
 | [F04 - Policy engine](F04-policy-engine.md) | 5 | Not yet |
 | [F05 - Review lifecycle](F05-review-lifecycle.md) | 5 | Not yet |
+| [F06 - Manager dashboard](F06-manager-dashboard.md) | 5 | Not yet |
+| [F07 - Reviews and policy settings](F07-reviews-and-policy-settings.md) | 5 | Not yet |
+| [F08 - Platform administration](F08-platform-administration.md) | 5 | Not yet |
 
 ## Learning gaps
 
@@ -46,3 +49,90 @@ them.
 | 2026-11-20 | Lost updates vs transactions | A transaction gives atomicity and isolation, NOT protection from a lost update: two transactions can read the same row and both write it. Only a predicate in the mutation prevents it | Noted, F05-NC1 |
 | 2026-11-20 | supertest laziness | A `Test` object does not send its request until `.then()` is called. Assigning one to a variable and awaiting it later means it never overlapped with anything | Noted, AI_LOG 29 |
 | 2026-11-20 | Prisma and column defaults | Prisma supplies `@default(now())` values from the client per row, so the database's `DEFAULT CURRENT_TIMESTAMP` never fires and rows in one transaction do not share a timestamp | Noted, AI_LOG 31 |
+
+---
+
+# The twenty most likely questions
+
+Fifty questions across ten feature documents is a revision resource, not an
+interview. These twenty are the ones an interviewer is most likely to reach for
+given what is actually in this repository - every one of them attacks a real
+decision, and most of them have a defect behind them.
+
+Answers are **not** repeated here. Each line names where the answer lives, so
+revising means reading the argument rather than a summary of it.
+
+### Multi-tenancy and authorization
+
+1. Every service puts `companyId` from the session into its `WHERE`. The admin
+   routes take it from the URL. Why is that not the vulnerability it looks
+   like? — [F08 Q1](F08-platform-administration.md)
+2. A company asks for another company's expense by a real id. Why 404 and not
+   403, and what stops a future query forgetting the predicate? —
+   [F02 Q3](F02-authentication.md), [ADR-003](../adr/ADR-003-cross-tenant-response.md), risk R-20
+3. How do you know tenant isolation actually holds, rather than that your tests
+   agree with your code? — F06-NC1, and
+   [the live matrix](../security/endpoint-authorization.md)
+4. A manager's browser requested `/admin` and got a 403 page. What was still
+   wrong with that, and how did you find it? — [AI_LOG 44](../../AI_LOG.md)
+
+### Concurrency
+
+5. Three different mechanisms for three concurrency problems. Why can't one of
+   them do all three jobs? — [F04 Q4](F04-policy-engine.md),
+   [F05 Q2](F05-review-lifecycle.md), [F08 Q4](F08-platform-administration.md)
+6. Your frequency test passed with the unique index dropped. What did that
+   prove, and what did you change? — [AI_LOG 20](../../AI_LOG.md)
+7. Two requests arrive at the same millisecond with the same `externalId`.
+   Walk me through both transactions. — [F03 Q2](F03-expense-submission.md)
+8. How do you make two supertest requests genuinely concurrent, and how would
+   you know if you hadn't? — [AI_LOG 29](../../AI_LOG.md), risk R-10
+9. A transaction does not prevent a lost update. What does? —
+   [ADR-004](../adr/ADR-004-review-resolution.md)
+
+### Idempotency and the API contract
+
+10. The same `externalId` with a different body. Why 409 rather than replaying
+    or updating? — [ADR-001](../adr/ADR-001-idempotency-conflicting-payload.md)
+11. A retry returns 200 and a first submission returns 201, with the same body.
+    Why does the distinction matter? — [F03 Q3](F03-expense-submission.md)
+
+### The policy engine
+
+12. Does the current expense count toward the frequency rule, and what breaks
+    if you change that? — [ADR-002](../adr/ADR-002-frequency-window.md),
+    assumption A1
+13. Show me the case where your frequency rule can be evaded, and explain why
+    you left it. — risk R-11, and the worked example in the README
+14. Why is the policy snapshotted onto the expense instead of joined at read
+    time? — [F04 Q5](F04-policy-engine.md), assumption A7
+
+### Data and correctness
+
+15. How do you represent money, and show me a bug the alternative produces. —
+    [ADR-005](../adr/ADR-005-money-representation.md), [AI_LOG 40](../../AI_LOG.md)
+16. Why is there a composite foreign key on `reviews`? —
+    [ADR-011](../adr/ADR-011-composite-foreign-key-tenant-integrity.md)
+
+### Credentials
+
+17. Why SHA-256 for API keys and bcrypt for passwords? —
+    [ADR-006](../adr/ADR-006-api-key-storage-rotation.md), [F08 Q2](F08-platform-administration.md)
+18. What exactly do you promise about a key shown once, and what do you not? —
+    [F08 Q5](F08-platform-administration.md)
+
+### The frontend
+
+19. Why is the review resolution pessimistic when optimistic updates are the
+    usual advice? — [F07 Q1](F07-reviews-and-policy-settings.md)
+20. Where does the browser keep the session, and why not a JWT? —
+    [ADR-008](../adr/ADR-008-browser-session.md)
+
+### The one to ask for
+
+If you want the single question that shows the most: **"tell me about a
+mistake you made in this project and how you found it."** The answer is in
+[`AI_LOG.md`](../../AI_LOG.md) - 50 of them, including a live API key written
+into a screenshot by a redaction that React undid, an acceptance check that had
+been failing for six features, and a seed that refused to start as soon as
+anybody used the application.

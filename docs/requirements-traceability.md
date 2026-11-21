@@ -122,7 +122,7 @@ however much code exists for it.
 | `tarek-ragab-abdelal` invited as collaborator | Confirmed by the project owner | **DONE** |
 | One `docker compose up` starts everything | F00-T01, F01-T18, F02-T20a | **DONE** |
 | A seed script fills both companies, users, keys, policies and sample data | F01-T13 to T16, F01-T18e to T18i | **DONE** |
-| README understandable on its own | [README.md](../README.md) | **PARTIAL** - updated per feature. F10 rewrites it for a reviewer opening the repository for the first time |
+| README understandable on its own | [README.md](../README.md) | **DONE** - rewritten in F10 for a reviewer opening the repository for the first time: quick start, verified credentials, a five-minute walkthrough, API examples, business rules, concurrency with diagrams, security, deployment and scaling, and every accepted limitation |
 | Email the repo link by 24 Nov | - | **PENDING** - the project owner's step |
 
 ---

@@ -101,6 +101,15 @@ bash scripts/verify-f02-1.sh
 Do **not** background any of steps 3 or 4, and do not run two of them in
 separate terminals.
 
+### Run all four, not the two you are thinking of
+
+F00 and F01 feel settled, so from F03 onwards the reports quoted F02 and F02.1
+and left the other two alone. `verify-f00.sh` had been **failing since
+F02.1** - its F00-T04 asserted `200` on `/`, which became a redirect to
+`/login` - and nothing noticed for six features (AI_LOG 45).
+
+A gate nobody runs is not a gate. All four run in every full verification.
+
 ### A faster loop while developing
 
 The acceptance scripts repeat the Jest suite, so during development run the
