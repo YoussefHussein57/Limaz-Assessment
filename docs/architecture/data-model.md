@@ -22,7 +22,7 @@ erDiagram
   }
   POLICY {
     uuid id PK
-    uuid companyId FK_UK "unique makes it one-to-one"
+    uuid companyId FK,UK "unique makes it one-to-one"
     int autoApproveLimitMinor
     int frequencyMaxCount
     int frequencyWindowMinutes
@@ -77,7 +77,7 @@ erDiagram
   }
   REVIEW {
     uuid id PK
-    uuid expenseId FK_UK "one review per expense"
+    uuid expenseId FK,UK "one review per expense"
     uuid companyId FK "composite FK with expenseId"
     enum state "OPEN or RESOLVED"
     enum outcome "nullable while OPEN"

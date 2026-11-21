@@ -149,7 +149,7 @@ revising means reading the argument rather than a summary of it.
 
 If you want the single question that shows the most: **"tell me about a
 mistake you made in this project and how you found it."** The answer is in
-[`AI_LOG.md`](../../AI_LOG.md) - 66 of them, including a live API key written
+[`AI_LOG.md`](../../AI_LOG.md) - 67 of them, including a live API key written
 into a screenshot by a redaction that React undid, an acceptance check that had
 been failing for six features, a seed that refused to start as soon as anybody
 used the application, and an oversized request body that had been answering 500

@@ -1606,7 +1606,7 @@ docs/
   requirements-traceability.md   Every assessment requirement mapped to evidence
 scripts/                  Acceptance scripts, the contrast checker, the webhook
                           sender, the security-header check
-AI_LOG.md                 Tools, prompts, and 66 recorded defects
+AI_LOG.md                 Tools, prompts, and 67 recorded defects
 ```
 
 ### Build history
@@ -1638,7 +1638,7 @@ Each feature was implemented, tested and reviewed before the next began.
 
 Everything in this repository was written with Claude Code, and everything in
 it is mine to defend. [`AI_LOG.md`](AI_LOG.md) records the tools, the shape of
-the prompts, and **66 defects** - each with how it was noticed, what fixed it,
+the prompts, and **67 defects** - each with how it was noticed, what fixed it,
 and what stops it coming back. They include a floating-point bug I asserted in
 a test that does not actually happen, an advisory lock that hid the very
 mechanism its tests claimed to prove, a layout that leaked an admin heading

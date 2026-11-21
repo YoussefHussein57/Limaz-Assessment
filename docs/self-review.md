@@ -96,7 +96,7 @@ laptop smoke test labelled as a sanity check.
 
 A README written for somebody who has never seen the project, eleven ADRs, a
 requirements traceability matrix, a 37-entry risk register where every status
-names its evidence, and an AI log of 66 defects - each with how it was noticed
+names its evidence, and an AI log of 67 defects - each with how it was noticed
 and what stops it recurring, including the ones that were embarrassing.
 
 **−1:** there is a lot of it, and the webhook bonus made it longer. A reviewer
@@ -168,7 +168,7 @@ self-audit reaches on its own.
 2. **Tenant isolation measured rather than asserted.** The authorization
    matrix was executed against the running stack with the UI bypassed, and the
    RSC payload was read directly for both role directions.
-3. **The AI log.** Sixty-six defects with attribution of how each was noticed
+3. **The AI log.** Sixty-seven defects with attribution of how each was noticed
    - including a live API key I wrote into a screenshot during my own
    verification, an acceptance script that had been failing for six features
    while reports quoted the two that passed, and an oversized request body

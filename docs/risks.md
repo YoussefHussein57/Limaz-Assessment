@@ -698,7 +698,7 @@ network failure cannot mint a second credential by itself.
 | **Likelihood** | Certain over a long enough period. Providers drop deliveries |
 | **Impact** | Medium - an expense that was never submitted is silently missing. Nothing is wrong; something is absent, which is harder to notice |
 | **Severity** | **Medium** |
-| **Mitigation** | None implemented. The gap is **answered in full** in the README and in [F12-card-webhook.md](../features/F12-card-webhook.md) §9, with the three approaches ranked by cost: an id-gap check (only if ids are sequential, which the assessment's `evt_8f2c1` gives no reason to think), a reconciliation job against a provider listing API (the real answer), and a liveness alert on companies that have gone quiet (cheap, weak, genuinely useful) |
+| **Mitigation** | None implemented. The gap is **answered in full** in the README and in [F12-card-webhook.md](features/F12-card-webhook.md) §9, with the three approaches ranked by cost: an id-gap check (only if ids are sequential, which the assessment's `evt_8f2c1` gives no reason to think), a reconciliation job against a provider listing API (the real answer), and a liveness alert on companies that have gone quiet (cheap, weak, genuinely useful) |
 | **Status** | `ACCEPTED` - an explained gap, which is what the assessment asks for here rather than an implementation |
 
 ### R-39 - The dashboard could be framed by any origin

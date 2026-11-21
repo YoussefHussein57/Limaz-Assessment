@@ -1663,6 +1663,39 @@ says where the correction came from. Recording this is not point-scoring: the
 instruction I was working under says not to take a report at face value, and
 this is the one place in the pass where that mattered.
 
+### 67. A broken ER diagram and a broken link, found by checking the docs as a reviewer would
+
+Neither pass found these, because both passes tested the **product**. A
+reviewer also reads the repository, and two things in it were wrong.
+
+**The entity-relationship diagram did not render.**
+`docs/architecture/data-model.md` used `FK_UK` to mark the two columns that
+are both a foreign key and unique. That is not mermaid syntax - the keys are
+`PK`, `FK` and `UK`, combined with a comma - so GitHub showed a parse error
+where the data model should be. On the page whose whole job is the schema.
+
+**How it survived.** F13 verified **eleven** diagrams: the ones added for the
+webhook bonus, all in the README. There are **thirty-three** in the
+repository. I checked the diagrams I had just written and called it
+'diagrams verified', which is a narrower claim than it sounded like - the
+same mistake in kind as R-11 being titled too narrowly, three sections above.
+
+**Fixed and re-verified properly:** every mermaid block in every markdown
+file extracted and passed through `mermaid.parse()` in a real browser.
+**33 of 33 parse**, and the repaired diagram was then rendered to confirm it
+draws - 87 KB of SVG with every entity present, because parsing and rendering
+are not the same claim.
+
+**A broken relative link.** `docs/risks.md` pointed at
+`../features/F12-card-webhook.md`. The file sits in `docs/`, so `../` leaves
+it - the target was `project/features/`, which does not exist. Introduced in
+F12, in the mitigation row of R-38. All 148 relative links in the
+repository now resolve.
+
+**The lesson is about the shape of the claim, not the typo.** Both defects
+were in material a reviewer reads first and no test touches. A green suite
+says nothing about whether the documentation renders.
+
 ### What the pass did not find, and why that is the useful part
 
 No tenant leak. No 500 from any of the ninety-odd malformed inputs it threw.
@@ -1707,4 +1740,4 @@ the other way.
 | 2026-11-21 | F11 implementation | Company manager provisioning, closing R-32. Two admin routes, no migration - the `User` model already carried everything. The administrator chooses the initial password, so the response carries no credential at all. Three defects recorded (51-53), two of them mine rather than the AI's. 30 new tests, 517/517 API passing, verified end to end in the browser: two managers created, a duplicate refused, and the new account signed in to its own workspace |
 | 2026-11-21 | F12 implementation | The assessment's optional card webhook bonus, built only after the core was tagged `v1.0.0-core`. HMAC-SHA256 over the raw request bytes, a per-company secret encrypted with AES-256-GCM rather than hashed (because HMAC needs the key material), a durable PostgreSQL inbox, and a `FOR UPDATE SKIP LOCKED` worker calling the SAME `ExpenseSubmissionService` a company backend reaches. Plus a sandbox simulator that signs server-side and delivers over real HTTP. Six defects recorded (54-59), one of them pre-existing since F03 and found by a webhook test: an oversized body was a 500 on every endpoint. 100 new tests, 617/617 API passing |
 | 2026-11-21 | F13 integration and delivery | Full demonstration through the application (49/49), full regression (647 tests), all four acceptance scripts, fresh installation from a clean checkout, final security audit, eight new Mermaid diagrams rendered before being committed, and the merge to `main` behind the `v1.0.0-core` tag. Three defects recorded (60-62), the last of which was the guard against overlapping test runs refusing a connection that was merely being reaped - a false failure in the project's own verification tooling, found in the final regression and fixed in both directions |
-| 2026-11-21 | QA regression pass and fixes | An independent black-box pass by the project owner - 198 cases over 12 cycles, written against the requirements and sharing no code with the project suites - found **no functional defect** and six minor ones. All six addressed: two header-hygiene fixes with new risk entries (**R-39**, **R-40**), LIKE-metacharacter escaping in the expense search with a negative control, R-11 widened from "back-dating" to any out-of-order arrival plus **F04-T26b**, a measured correction to the test-count claim (534 of 619 API tests touch PostgreSQL, not 617), the authorization matrix corrected with a narrower scope than the report gave it, and a `globalSetup` that prints the cause Jest discards. Four defects recorded (63-66). 649 tests passing |
+| 2026-11-21 | QA regression pass and fixes | An independent black-box pass by the project owner - 198 cases over 12 cycles, written against the requirements and sharing no code with the project suites - found **no functional defect** and six minor ones. All six addressed: two header-hygiene fixes with new risk entries (**R-39**, **R-40**), LIKE-metacharacter escaping in the expense search with a negative control, R-11 widened from "back-dating" to any out-of-order arrival plus **F04-T26b**, a measured correction to the test-count claim (534 of 619 API tests touch PostgreSQL, not 617), the authorization matrix corrected with a narrower scope than the report gave it, and a `globalSetup` that prints the cause Jest discards. Five defects recorded (63-67), the last found by reading the repository as a reviewer would rather than by testing the product: an ER diagram that did not render and a relative link that did not resolve. 649 tests passing; 33/33 mermaid diagrams parse-verified in a browser and 148/148 relative links resolve |
