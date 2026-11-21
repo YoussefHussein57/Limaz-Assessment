@@ -923,6 +923,111 @@ became a plain computation and both the comment and the problem went away.
 
 The disable comment had been a signal I was working around my own design.
 
+## Defects found during F08
+
+### 42. A key label that said the opposite of the truth
+
+API keys carry an environment token - `lmz_dev_`, `lmz_prod_` - so a key
+pasted into a support conversation says which deployment it belongs to. The
+stated purpose is that nobody wastes an afternoon on a development key that
+was never going to work against production.
+
+I derived it from `NODE_ENV`. The Docker image sets `NODE_ENV=production`
+in **every** environment, because it is a production **build** - so the first
+key I issued on a local `docker compose up` came back prefixed
+`lmz_prod_`, sitting in a list beside seeded keys prefixed `lmz_dev_`.
+
+**The feature was actively defeating its own purpose.** A label that lies
+about which deployment a credential belongs to is worse than no label: it
+invites exactly the mistake it exists to prevent.
+
+**Fix:** the token now derives from `APP_ORIGIN`, which names the deployment
+rather than the build. The limitation is narrow and written down - a staging
+deployment on a non-local host reads `prod`. Six unit tests cover it, and the
+first asserts the case that was broken.
+
+Caught by reading a key the UI had just issued. No test would have found it:
+the test environment sets `NODE_ENV=test`, which was the one value that
+worked.
+
+### 43. I wrote a live API key into a screenshot
+
+The worst thing I did in this project, and it was in my own verification
+process rather than in the product.
+
+The brief says not to capture raw secrets, so before screenshotting the
+one-time key dialog I set the input's value to a placeholder through the DOM
+and took the picture.
+
+**React re-rendered from its own state first.** The placeholder never
+survived, and `docs/screenshots/f08-key-reveal-redacted.png` was written
+containing a working credential - in a file named *redacted*, in a directory I
+was about to commit.
+
+I found it by reading the screenshot back rather than trusting that the
+redaction had worked.
+
+**What I did, in order:**
+
+1. deleted the file
+2. confirmed with `git log --all -- <path>` that it had **never been
+   committed**, so it was not in history and no rewrite was needed
+3. revoked the key in the database and verified `status = REVOKED`
+4. deleted the throwaway company it belonged to entirely
+
+Real-world exposure was nil - a local database, a company that existed for
+four minutes - but the process failure was real and would not have been nil
+somewhere else.
+
+**The fix is where the mask is applied.** The committed artefact is the
+**image**, so the mask has to be in the **painted pixels**: an opaque overlay
+positioned over the field, which no re-render can undo because it never
+touches React's state. Verified by reading the new screenshot back.
+
+**It very nearly happened a second time.** Writing this entry, I pasted the
+actual key into it as evidence, and the session's own secret-scanning guard
+refused the write. The entry now describes the value's shape instead. Twice in
+one feature I reached for "show the real thing to prove the point" on a
+credential - which is the habit, not the accident.
+
+**The lesson generalises past screenshots.** I had put the guarantee in the
+wrong layer - the DOM - and trusted a layer that something else owned. It is
+the same mistake as checking `revokedAt` after a query instead of putting it
+in the WHERE clause, which this very feature argues against three files away.
+The F08 manual cycle now warns the next person about exactly this.
+
+
+### 44. A layout that hides its children does not stop them rendering
+
+`scripts/verify-f02-1.sh` went red on F02.1-T07b: *"admin navigation leaked
+into the denied page"*. It greps the HTML a manager gets from `/admin` for
+the word `Companies`, and found it.
+
+`(app)/admin/layout.tsx` returns a 403 explanation **instead of**
+`children` for a non-administrator, which I had been treating as "the page
+does not render". It is not. Next renders the layout and the page in parallel
+and composes the result - so the page's output still travelled in the RSC
+payload, behind a layout that simply declined to display it.
+
+**What actually leaked was two static strings**: the heading `Companies` and
+a description. The admin pages fetch their data on the client and the API
+refuses a manager with 403, so no company information was in that payload.
+
+**But the structure was wrong, and that is the finding.** The first admin page
+that server-rendered a company name would leak it the same way, silently, with
+nothing on screen to suggest it.
+
+**Fix:** `isPlatformAdmin()`, called by every admin page, which returns
+`null` for anyone else. The reader still sees the layout's explanation; the
+page contributes nothing. Verified by fetching the page as a manager and
+counting zero occurrences, and as an administrator and counting one.
+
+**The test was right and my mental model was wrong.** I nearly reached for
+"the string is harmless, relax the assertion" - which would have kept the red
+check quiet and left the structural hole in place for whoever added the next
+admin page.
+
+
 ## Running record
 
 | Date | Phase | Notes |
@@ -946,3 +1051,4 @@ The disable comment had been a signal I was working around my own design.
 | 2026-11-20 | F06 implementation | Three tenant-scoped read endpoints, a single-statement aggregate, a shared keyset cursor, and three pages split between Server and Client Components on a stated rule. Four defects found and fixed - one of them a hundred-times money error in my own mockup. 67 new tests (45 backend, 22 frontend), 417/417 API tests passing, 23 browser checks at six viewport widths |
 | 2026-11-21 | F06 closure | The three PARTIAL rows executed rather than described. Every one of them failed: a long merchant broke the table layout, a real backend outage produced Next's default error screen instead of the designed one, and its retry button did not retry. Four defects found and fixed, R-29 given a real endpoint, R-28 given an honest label, and test-database isolation enforced by an advisory lock |
 | 2026-11-21 | F07 implementation | The review UI and policy settings. The backend needed only two endpoints - F05 already guaranteed one resolution, so F07 is about not lying to the manager who loses that race. Pessimistic mutation, a 409 path that refreshes and names the winner, string-arithmetic money conversion. Two defects found and fixed. 23 backend tests, 9 frontend, and a conflict reproduced with two genuinely independent sessions |
+| 2026-11-21 | F08 implementation | Platform administration: companies, onboarding in one transaction, and the API key lifecycle. Rotation uses a conditional update rather than an advisory lock, because the invariant is one row rather than F04's count across many. Two defects: a key label derived from the build instead of the deployment, and - in my own verification - a live key written into a screenshot by a redaction that React undid. 42 new tests, 487/487 passing |

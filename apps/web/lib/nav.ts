@@ -1,4 +1,4 @@
-import { FileText, Home, KeyRound, Building2, ScrollText, Settings } from 'lucide-react';
+import { FileText, Home, Building2, ScrollText, Settings } from 'lucide-react';
 import type { UserRole } from './auth-shared';
 
 export interface NavItem {
@@ -23,10 +23,18 @@ const MANAGER_NAV: readonly NavItem[] = [
   { label: 'Policy', href: '/dashboard/policy', Icon: Settings },
 ];
 
+/*
+ * One destination, not three.
+ *
+ * API keys live inside a company's own page rather than in a separate
+ * section: a key only means anything in the context of the company it
+ * authenticates, and a flat list of every key on the deployment would be a
+ * screen nobody has a reason to open. A separate "Overview" was dropped for
+ * the same reason - the companies list already shows the one thing worth
+ * knowing at a glance, which companies cannot authenticate.
+ */
 const ADMIN_NAV: readonly NavItem[] = [
-  { label: 'Overview', href: '/admin', Icon: Home },
-  { label: 'Companies', href: '/admin/companies', Icon: Building2, comingIn: 'F08' },
-  { label: 'API keys', href: '/admin/api-keys', Icon: KeyRound, comingIn: 'F08' },
+  { label: 'Companies', href: '/admin', Icon: Building2 },
 ];
 
 /**

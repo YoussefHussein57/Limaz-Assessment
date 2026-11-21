@@ -492,14 +492,46 @@ evidence that supports its status. Where a mitigation is partial, the status is
 | **Manual verification** | Step 16 of the F07 manual cycle |
 | **Status** | `ACCEPTED` - stated rather than implied to be handled |
 
+### R-32 - A newly created company has no manager
+
+| | |
+|---|---|
+| **Component** | `CompanyAdminService.create` |
+| **Description** | Company creation makes the company, its policy and its first API key (assumption A5), but **no manager account**. The company can submit expenses immediately and nobody can sign in to review the ones the policy flags, so they accumulate |
+| **Why it was not built** | The two options are both worse than the gap. Inventing a password means a predictable or exposed credential; an invitation flow means email delivery, token lifetimes and a password-reset path - a subsystem the assessment does not ask for |
+| **Likelihood** | Certain for every company created this way |
+| **Impact** | Medium - flagged expenses sit unresolved until a manager is provisioned by other means |
+| **Severity** | **Medium** |
+| **Mitigation** | **Surfaced, not hidden.** The company detail page opens with a warning stating the company has no manager, what that means, and that it is not automated. The API returns `managerCount` so the condition is machine-readable too |
+| **Residual hole** | Provisioning happens outside the application. The schema already supports several managers per company (A6), so the endpoint is a small addition when a credential-delivery mechanism exists |
+| **Automated verification** | F08-B05 asserts `managerCount: 0` on a newly created company - the limitation is pinned rather than incidental |
+| **Manual verification** | Step 8 of the F08 manual cycle |
+| **Status** | `ACCEPTED` - stated in the interface a person actually looks at |
+
+### R-33 - API key issuance is not idempotent
+
+| | |
+|---|---|
+| **Component** | `ApiKeyAdminService.issue`, `.rotate`, `CompanyAdminService.create` |
+| **Description** | Each of these mints a credential and returns it once. A retried request mints **another**. If the response is lost in transit, a key exists that nobody has seen the value of and nobody knows to look for |
+| **Why there is no idempotency key** | F03 solved exactly this for expenses with a caller-supplied `externalId` and a payload hash. It could be done here - but the caller is a human in a browser, not a retrying backend, and the recovery is cheap and visible: the orphan key appears in the list and can be revoked |
+| **Likelihood** | Low - a dropped response on a short administrative request |
+| **Impact** | Medium - an active credential nobody is tracking is exactly what revocation exists for |
+| **Severity** | **Low** |
+| **Mitigation** | Every mutation sets `retry: false`, so the client never produces a duplicate on its own. The key list shows every key with its state, so an orphan is **visible** rather than silent, and revocation is one click |
+| **Residual hole** | An administrator must notice the extra row. There is no alert |
+| **Automated verification** | None - the failure is a lost response, which the test harness cannot produce faithfully |
+| **Manual verification** | Review the key list after any administrative action that appeared to fail |
+| **Status** | `ACCEPTED` - with the recovery path named and made visible |
+
 ## Summary
 
 | Severity | Open | In progress | Mitigated | Accepted |
 |---|---|---|---|---|
 | Critical | - | - | R-01, R-02, R-03, R-05, R-10, R-21 | R-20 |
 | High | R-06, R-15 | - | R-04, R-07, R-08, R-12, R-14 | R-18, R-24, R-26 |
-| Medium | R-13 | - | R-16 | R-11, R-17, R-19, R-22, R-23, R-25, R-27 |
-| Low | - | - | **R-29** | R-09, R-28, R-30, R-31 |
+| Medium | R-13 | - | R-16 | R-11, R-17, R-19, R-22, R-23, R-25, R-27, **R-32** |
+| Low | - | - | **R-29** | R-09, R-28, R-30, R-31, **R-33** |
 
 ## Review log
 
@@ -519,3 +551,4 @@ evidence that supports its status. Where a mitigation is partial, the status is
 | 2026-11-20 | F06 completed | R-28 and R-29 added and accepted, both naming their upgrade path. R-01 re-verified on three new read endpoints with a negative control (F06-NC1) that fails when the tenant predicate is removed. R-23 re-checked and left **ACCEPTED**: no DOM test runner was added, so frontend interaction scenarios remain browser-verified and are marked as such rather than as PASS. R-25 gained direct evidence - `formatMoney` is unit-tested at the top of the int4 range. R-24 re-checked: the new pages still enforce nothing, and every refusal is the API's (F06-T07 to T10) |
 | 2026-11-21 | F06 closure | **R-29 moved to `MITIGATED`**: the category filter now reads the company's whole vocabulary from `GET /v1/dashboard/expense-categories`, bounded at 200 and flagging truncation, verified by F06-T51 to T55. R-28 stays `ACCEPTED` but the control no longer mislabels itself. **R-30 added and accepted** after analysing the dependency path rather than the audit count. R-23 re-checked and unchanged: the three remaining browser-only rows (T35, T45, T46) were executed and all three found real defects, which is evidence for the risk rather than against it |
 | 2026-11-21 | F07 completed | **R-31 added and accepted**: concurrent policy edits are last-write-wins, narrowed to the changed field by sending a partial PATCH. R-01 re-verified on the two policy endpoints (F07-B08 to B12). R-04 re-checked: F07 added no resolution path of its own and ADR-004 semantics are unchanged - the conflict case is now exercised through the UI with two independent sessions (F07-F10). R-23 unchanged: the resolution and policy flows are browser-verified and recorded as such |
+| 2026-11-21 | F08 completed | **R-32 and R-33 added and accepted**, both surfaced in the interface rather than only in this register. R-08 (API key handling) moved to `MITIGATED` with measured evidence: the plaintext appears nowhere in the table (F08-B20), no response carries a hash (F08-B22), the lifecycle is enforced inside the authentication WHERE clause (F08-B29 to B31, B36), and two concurrent rotations produce exactly one winner (F08-B34). R-01 re-verified on the one module that is deliberately NOT tenant-scoped: the company id is a selector applied after the role check, and a mismatched company/key pair mutates nothing (F08-B32, B38) |

@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { APP_FILTER, APP_GUARD } from '@nestjs/core';
+import { AdminModule } from './admin/admin.module';
 import { AuthModule } from './auth/auth.module';
 import { AuthenticationGuard, AuthorizationGuard, CsrfGuard } from './auth/guards';
 import { HttpExceptionFilter } from './common/http-exception.filter';
@@ -55,6 +56,10 @@ import { ReviewsModule } from './reviews/reviews.module';
     // F07: the manager reads and edits their own company's policy. Changes
     // apply to NEW evaluations only - no existing expense is touched (A7).
     PolicyModule,
+    // F08: platform administration. The ONLY module whose routes are not
+    // tenant-scoped - an administrator has no tenant, and the company id
+    // arrives in the path as a selector AFTER the role has been verified.
+    AdminModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: CsrfGuard },

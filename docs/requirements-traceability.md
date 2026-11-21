@@ -73,7 +73,7 @@ however much code exists for it.
 | Manager lists, searches, filters and pages their company's expenses | **F06** | **DONE** - F06-T06, T14 to T19c |
 | Manager opens one expense with every reason and the historical policy | **F06** | **DONE** - F06-T11, T12, T13 |
 | Original automated decision and current status shown as distinct facts | **F06** | **DONE** - F06-T13, T28; `status-badges.tsx` |
-| Admin panel: companies, creation, API keys | F02.1 (shell), F08 | **PARTIAL** - the shell and role gate are done; the content is F08 |
+| Admin panel: companies, creation, API keys | F02.1 (shell), **F08** | **DONE** - company listing, creation, details and the full key lifecycle (F08-B01 to B42, F08-F01 to F33) |
 | Responsive, usable on a small screen | F02.1, **F06** | **DONE** - re-verified in a real browser at 360, 390, 768, 1024, 1440 and 1920 on all three new pages; F06-T39 to T44 |
 | Accessible: contrast, focus, keyboard, labels | F02.1, **F06** | **PARTIAL** - 15/15 contrast pairs measured and no new token introduced; status never carried by colour alone (F06-T47). **A full tab-order walk was not performed** (F06-T46) and no conformance claim is made |
 | Seeded credentials not exposed in the production-facing interface | F02.1 | **DONE** - F02.1-creds |
@@ -140,5 +140,5 @@ Recorded so they are not mistaken for done.
 | ~~That the real policy engine agrees with the seeded fixtures~~ | **Closed in F04** | - |
 | ~~Resolving a review from the dashboard~~ | **Closed in F07** - verified with two independent sessions (F07-F10) | - |
 | ~~Cache invalidation after a resolution~~ | **Closed in F07** - three query families plus `router.refresh()`, verified on the queue and the dashboard (F07-F11, F12) | - |
-| API key rotation and its grace window end to end | Only the lifecycle semantics are enforced so far | F08 |
-| Admin access to a named company's data | `tenantScope()` refuses a principal with no tenant; admin routes take an explicit company id | F08 |
+| ~~API key rotation and its grace window end to end~~ | **Closed in F08** - rotation, the 24-hour grace, expiry and revocation all verified against real PostgreSQL (F08-B27 to B37) | - |
+| ~~Admin access to a named company's data~~ | **Closed in F08** - the company id is a path selector applied after the role check, never a proof (F08-B01 to B04, B32, B38) | - |

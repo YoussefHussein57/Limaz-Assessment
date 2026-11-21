@@ -1,69 +1,71 @@
+import { Suspense } from 'react';
+import { CompanyWorkspace } from '@/components/admin/company-workspace';
 import { PageHeader } from '@/components/layout/page-header';
-import { Alert } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
-import { Card, CardBody, CardHeader } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
+import { isPlatformAdmin } from '@/lib/admin-guard';
 import { requireUser } from '@/lib/auth';
 
 /**
  * The platform administration workspace.
  *
- * Same honesty as the manager dashboard: real identity, no invented figures.
- * Company counts and key listings belong to F08, and showing a plausible
- * number here would be a lie somebody has to defend in a review.
+ * This page IS the overview. A separate summary screen was considered and
+ * rejected: it would have needed either its own aggregate endpoint or figures
+ * derived from one page of companies, and the only number worth showing -
+ * which companies cannot authenticate - is on the rows themselves.
+ *
+ * A Server Component shell around a client list, the same split the manager
+ * listings use. `Suspense` is required because the list reads the query
+ * string with `useSearchParams`.
  */
 export const dynamic = 'force-dynamic';
 
 export default async function AdminPage() {
-  const user = await requireUser();
+  await requireUser();
+
+  // Render NOTHING for a non-administrator. The layout already shows them an
+  // explanation; without this the page's output would still travel in the RSC
+  // payload behind it (AI_LOG 44).
+  if (!(await isPlatformAdmin())) {
+    return null;
+  }
 
   return (
     <>
       <PageHeader
-        title="Platform administration"
-        description="Manage the companies on this deployment and the API keys their backends authenticate with."
+        title="Companies"
+        description="Every company on this deployment, and the API keys their backends authenticate with."
       />
 
-      <div className="grid gap-4 sm:grid-cols-2">
-        <Card>
-          <CardHeader title="Signed in as" />
-          <CardBody className="flex flex-col gap-3 text-sm">
-            <div className="flex items-start justify-between gap-3">
-              <span className="text-text-secondary">Name</span>
-              <span className="text-right font-medium text-text">{user.displayName}</span>
-            </div>
-            <div className="flex items-start justify-between gap-3">
-              <span className="text-text-secondary">Email</span>
-              <span className="text-right font-medium break-all text-text">{user.email}</span>
-            </div>
-            <div className="flex items-start justify-between gap-3">
-              <span className="text-text-secondary">Role</span>
-              <Badge tone="accent">Platform admin</Badge>
-            </div>
-          </CardBody>
-        </Card>
-
-        <Card>
-          <CardHeader title="Scope" />
-          <CardBody className="flex flex-col gap-3 text-sm">
-            <div className="flex items-start justify-between gap-3">
-              <span className="text-text-secondary">Company</span>
-              <span className="text-right font-medium text-text">None</span>
-            </div>
-            <p className="text-text-secondary">
-              A platform administrator belongs to no company. That is why company-scoped endpoints
-              refuse this account rather than quietly returning everything: a missing tenant filter
-              means either no rows or all of them, and neither is a safe default.
-            </p>
-          </CardBody>
-        </Card>
-      </div>
-
-      <div className="mt-4">
-        <Alert tone="info" title="Not built yet">
-          Company creation and API key management arrive in F08. The navigation marks each one
-          with the feature that delivers it.
-        </Alert>
-      </div>
+      <Suspense fallback={<WorkspaceFallback />}>
+        <CompanyWorkspace />
+      </Suspense>
     </>
+  );
+}
+
+function WorkspaceFallback() {
+  return (
+    <div aria-busy="true" aria-label="Loading companies">
+      <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-end">
+        <div className="flex-1 sm:max-w-sm">
+          <Skeleton className="h-3 w-16" />
+          <Skeleton className="mt-1 h-11 w-full" />
+        </div>
+        <Skeleton className="h-11 w-40 sm:ml-auto" />
+      </div>
+      <div className="overflow-hidden rounded-card border border-border bg-surface">
+        <div className="divide-y divide-border">
+          {Array.from({ length: 5 }, (_, index) => (
+            <div key={index} className="flex items-center gap-4 px-5 py-4">
+              <div className="flex-1">
+                <Skeleton className="h-4 w-44" />
+                <Skeleton className="mt-2 h-3 w-60 max-w-full" />
+              </div>
+              <Skeleton className="h-5 w-24 rounded-full" />
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
   );
 }

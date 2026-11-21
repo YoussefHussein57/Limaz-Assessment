@@ -13,7 +13,7 @@ identifier belonging to another company.
 
 ## Current state
 
-> **F00 through F07 are complete.** One
+> **F00 through F08 are complete.** One
 > `docker compose up` starts the stack, applies migrations and seeds two
 > companies. Both caller types authenticate: company backends with an API key,
 > managers and the platform admin with a database-backed session. Tenant
@@ -61,7 +61,20 @@ identifier belonging to another company.
 > evaluations: every existing expense keeps the snapshot and the decision it
 > was judged with, and four tests hold that line.
 >
-> **Still to come:** the platform admin panel (F08).
+> **The platform administrator can onboard a company end to end.** Creating
+> one writes the company, its expense policy and its first API key in a single
+> transaction - a company without a policy would accept submissions and be
+> unable to decide any of them. The raw key is shown once, because only its
+> SHA-256 hash is stored; if it is lost the answer is to revoke and reissue,
+> not to look it up.
+>
+> Keys rotate with a 24-hour grace window, so replacing one is not an outage,
+> and revoke immediately, because the reason you revoke is that it leaked. Two
+> administrators rotating the same key at the same moment produce exactly one
+> winner and no orphan replacement.
+>
+> **Still to come:** F09 (cross-feature regression and hardening) and F10
+> (final documentation and submission).
 >
 > This is an incremental build. Each feature is implemented, tested and
 > reviewed before the next one begins. The table below is the honest status.
@@ -77,7 +90,7 @@ identifier belonging to another company.
 | **F05** | Review lifecycle, manager resolution, concurrent safety | **Done** - 66 new tests. **The review API is live** |
 | **F06** | Manager dashboard, expense listing, filtering, expense detail | **Done** - 67 new tests, 23 browser checks at six widths. **The dashboard is live** |
 | **F07** | Manager review resolution and company policy settings | **Done** - 31 new tests, conflict verified with two independent sessions. **The manager workflow is complete** |
-| F08 | Platform admin panel | Not started |
+| **F08** | Platform administration, company onboarding, API key lifecycle | **Done** - 42 new tests. **The whole product works end to end** |
 | F09 | Cross-feature regression and security testing | Not started |
 | F10 | Final documentation and submission readiness | Not started |
 
@@ -203,8 +216,8 @@ npm test            # both workspaces
 ```
 
 ```
-@limaz/api   Test Suites: 30 passed, 30 total
-             Tests:      417 passed, 417 total
+@limaz/api   Test Suites: 34 passed, 34 total
+             Tests:      487 passed, 487 total
 
 @limaz/web   Test Suites:  2 passed,  2 total
              Tests:       30 passed,  30 total
