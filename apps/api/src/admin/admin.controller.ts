@@ -3,6 +3,7 @@ import {
   Body,
   Controller,
   Get,
+  Header,
   HttpCode,
   HttpStatus,
   Param,
@@ -75,8 +76,15 @@ export class AdminController {
    *
    * 201, and the body carries the raw key ONCE. That is the only time this
    * system ever returns a plaintext credential outside a rotation.
+   *
+   * `no-store` because of exactly that. A POST response is already
+   * uncacheable by default - a shared cache may only store one when it
+   * carries explicit freshness information, which this does not - so the
+   * header changes nothing a CORRECT intermediary would do. It is here for
+   * the ones that are not, and for the browser's own back/forward cache.
    */
   @Post('companies')
+  @Header('Cache-Control', 'no-store')
   async createCompany(
     @Body() body: unknown,
   ): Promise<{ company: CompanyDetail; apiKey: IssuedApiKey }> {
@@ -108,7 +116,9 @@ export class AdminController {
     return { items: await this.apiKeys.list(companyId) };
   }
 
+  /** `no-store`: this body carries a plaintext credential. See `createCompany`. */
   @Post('companies/:companyId/api-keys')
+  @Header('Cache-Control', 'no-store')
   async issueApiKey(@Param('companyId') companyId: string): Promise<IssuedApiKey> {
     assertUuid(companyId, 'companyId');
 
@@ -119,8 +129,12 @@ export class AdminController {
    * 200, not 201. Rotation transitions an existing credential and returns its
    * replacement; calling it a creation would be half true and would make the
    * status code disagree with `revoke` below for no reason.
+   *
+   * `no-store`: this body carries a plaintext credential, like
+   * `createCompany` above.
    */
   @Post('companies/:companyId/api-keys/:keyId/rotate')
+  @Header('Cache-Control', 'no-store')
   @HttpCode(HttpStatus.OK)
   async rotateApiKey(
     @Param('companyId') companyId: string,

@@ -458,14 +458,32 @@ describe('F08 API key lifecycle', () => {
     await submitWith(nileKey, `b42-${Date.now()}`).expect(201);
   });
 
-  it('F08-B26: a key issuance response is not cacheable by anything in between', async () => {
-    const response = await issue().expect(201);
+  it('F08-B26: every response carrying a plaintext key says no-store', async () => {
+    // F09 made this explicit. A POST response is already uncacheable by
+    // default, so the previous assertion - that nothing MARKS it cacheable -
+    // was true but passive. These three are the only responses in the system
+    // that return a plaintext credential, and each now says so outright.
+    const issued = await issue().expect(201);
+    expect(issued.headers['cache-control']).toMatch(/no-store/iu);
 
-    // Nest sets no cache headers of its own, so the absence of a `cache-control`
-    // permitting storage is what is asserted - a response carrying a secret
-    // must never be marked publicly cacheable.
-    const cacheControl = response.headers['cache-control'] ?? '';
-    expect(cacheControl).not.toMatch(/public/iu);
-    expect(cacheControl).not.toMatch(/max-age=[1-9]/u);
+    const rotated = await request(app.getHttpServer())
+      .post(`/v1/admin/companies/${companyId}/api-keys/${issued.body.key.id}/rotate`)
+      .set(asUser(adminCookie))
+      .send({})
+      .expect(200);
+    expect(rotated.headers['cache-control']).toMatch(/no-store/iu);
+
+    const created = await request(app.getHttpServer())
+      .post('/v1/admin/companies')
+      .set(asUser(adminCookie))
+      .send({ name: `Cache Co ${Date.now()}`, currency: 'SAR' })
+      .expect(201);
+    expect(created.headers['cache-control']).toMatch(/no-store/iu);
+
+    // And none of them is marked storable by a shared cache either.
+    for (const r of [issued, rotated, created]) {
+      expect(r.headers['cache-control']).not.toMatch(/public/iu);
+      expect(r.headers['cache-control']).not.toMatch(/max-age=[1-9]/u);
+    }
   });
 });

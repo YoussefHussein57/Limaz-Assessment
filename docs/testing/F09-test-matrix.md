@@ -178,6 +178,29 @@ submission unrunnable.
 
 ---
 
+## 6b. Secret-returning responses now say `no-store`
+
+B8 asked for the cache headers on the issuance responses to be reviewed. They
+carried **none at all**.
+
+That is not a defect: a POST response is uncacheable by default - a shared
+cache may only store one that carries explicit freshness information - and
+F08-B26 asserted the absence of anything marking it storable. But the
+assertion was passive, and these are the only three responses in the system
+that ever return a plaintext credential.
+
+| | Response | Before | After |
+|---|---|---|---|
+| F09-C01 | `POST /v1/admin/companies` | no `cache-control` | `no-store` |
+| F09-C02 | `POST /v1/admin/companies/:id/api-keys` | no `cache-control` | `no-store` |
+| F09-C03 | `POST /v1/admin/.../api-keys/:keyId/rotate` | no `cache-control` | `no-store` |
+
+F08-B26 now asserts `no-store` on all three rather than the absence of
+`public`. Measured through the Next proxy as well as directly on the API, so
+the header survives the hop a browser actually takes.
+
+---
+
 ## 7. Dependency review
 
 `npm audit`: **22 findings - 3 high, 19 moderate.** Analysed rather than

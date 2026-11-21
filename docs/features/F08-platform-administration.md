@@ -264,6 +264,17 @@ what is true - "you will not be able to retrieve the full key again **here**".
 If it is lost, the recovery path is **revoke and issue another**. There is no
 lookup, by design.
 
+### The three responses that carry a secret say `no-store`
+
+`POST /v1/admin/companies`, `POST .../api-keys` and `POST .../rotate` are the
+only responses in this system that ever contain a plaintext credential. Each
+sets `Cache-Control: no-store`.
+
+A POST response is already uncacheable by default, so this changes nothing a
+correct intermediary would do. It is there for the ones that are not, and for
+the browser back/forward cache. Added in F09 when the headers were reviewed
+and found to be absent rather than wrong (F08-B26).
+
 ### Integration guidance uses a placeholder
 
 The company detail page shows a submission example with `YOUR_API_KEY`. A live
