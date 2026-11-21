@@ -68,16 +68,70 @@ interface LockCarrier {
   [HANDLE]?: SuiteLock;
 }
 
+/**
+ * How long to keep trying before refusing.
+ *
+ * ---------------------------------------------------------------------------
+ * WHY THIS IS NOT ZERO, WHICH IS WHAT IT USED TO BE
+ * ---------------------------------------------------------------------------
+ *
+ * `pg_try_advisory_lock` answers immediately, which is right for the case this
+ * guard was built for: two runs genuinely active at once. It is WRONG for
+ * runs that are merely ADJACENT.
+ *
+ * The acceptance scripts each invoke `npm test` internally, and they are meant
+ * to be run one after another. When Jest exits, PostgreSQL has not necessarily
+ * noticed yet - the TCP connection is closed by the operating system a moment
+ * later, and the advisory lock is released then. So the next script's run can
+ * arrive while the previous one's connection is still, briefly, alive.
+ *
+ * That is exactly what happened in F13: `verify-f00` and `verify-f01` passed,
+ * `verify-f02` reported `F02-jest suite failed`, and the same suite passed
+ * 617/617 on its own seconds later. The holder was pid 201, which no longer
+ * existed by the time anybody looked (AI_LOG 62).
+ *
+ * A bounded wait tells the two cases apart. A connection being reaped frees
+ * the lock within a second or so; a genuinely concurrent run is still holding
+ * it thirty seconds later, and the refusal below still names its pid.
+ */
+const LOCK_WAIT_MS = 30_000;
+const LOCK_POLL_MS = 500;
+
 export async function acquireSuiteLock(): Promise<void> {
   const client = new Client({ connectionString: adminDatabaseUrl() });
   await client.connect();
 
-  const result = await client.query<{ locked: boolean }>(
-    'SELECT pg_try_advisory_lock($1, $2) AS locked',
-    [LOCK_NAMESPACE, LOCK_RESOURCE],
-  );
+  const deadline = Date.now() + LOCK_WAIT_MS;
+  let locked: boolean;
+  let waited = false;
 
-  if (!result.rows[0]?.locked) {
+  for (;;) {
+    const result = await client.query<{ locked: boolean }>(
+      'SELECT pg_try_advisory_lock($1, $2) AS locked',
+      [LOCK_NAMESPACE, LOCK_RESOURCE],
+    );
+
+    locked = result.rows[0]?.locked === true;
+
+    if (locked || Date.now() >= deadline) {
+      break;
+    }
+
+    if (!waited) {
+      waited = true;
+      process.stdout.write(
+        `[suite-lock] ${TEST_DATABASE_NAME} is held; waiting up to ${LOCK_WAIT_MS / 1_000}s ` +
+          'for the previous run to release it.\n',
+      );
+    }
+
+    // `pg_try_advisory_lock` is retried rather than switching to the blocking
+    // `pg_advisory_lock`, so the refusal below can still report WHO holds it.
+    // A blocking wait would simply hang with no diagnosis.
+    await new Promise((resolve) => setTimeout(resolve, LOCK_POLL_MS));
+  }
+
+  if (!locked) {
     // Who is holding it, so the message names the problem rather than
     // describing it. Best-effort: if this query fails the refusal still
     // stands.
@@ -114,6 +168,9 @@ export async function acquireSuiteLock(): Promise<void> {
         '',
         ' This run would DROP and CREATE that database while the other one',
         ' is using it, which breaks both. Refusing to start.',
+        '',
+        ` Waited ${LOCK_WAIT_MS / 1_000}s for it to be released, so this is not`,
+        ' a connection that was merely on its way out.',
         '',
         ' Run verification commands ONE AT A TIME. In particular,',
         ' scripts/verify-f0*.sh invoke `npm test` internally, so none of',

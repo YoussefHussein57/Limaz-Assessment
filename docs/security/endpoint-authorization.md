@@ -55,9 +55,41 @@ decorator closes both doors. That is why an API key gets
 | POST | `/v1/admin/companies/:id/api-keys` | 403 | ✅ | 403 | 401 | path selector | F09-E2E T8 |
 | POST | `/v1/admin/.../api-keys/:keyId/rotate` | 403 | ✅ | 403 | 401 | path selector **+ keyId** | F09-E2E T9, A11c |
 | POST | `/v1/admin/.../api-keys/:keyId/revoke` | 403 | ✅ | 403 | 401 | path selector **+ keyId** | F09-E2E T10, A14 |
+| GET | `/v1/admin/companies/:id/managers` | 403 | ✅ | 403 | 401 | path selector | F11-T17, T18, T19 |
+| POST | `/v1/admin/companies/:id/managers` | 403 | ✅ | 403 | 401 | path selector; **role and company written by the server** | F11-T10, T11, T17 to T20 |
+| GET | `/v1/admin/companies/:id/webhook-integration` | 403 | ✅ | 403 | 401 | path selector | F12-T04 |
+| POST | `/v1/admin/companies/:id/webhook-integration` | 403 | ✅ | 403 | 401 | path selector; **returns a secret once**, `no-store` | F12-T01, T04 |
+| GET | `/v1/admin/simulator` | 403 | ✅ | 403 | 401 | none - reports a deployment flag | F12-T150 |
+| POST | `/v1/admin/simulator/payments` | 403 | ✅ | 403 | 401 | body `companyId`, **after** the role check; 404 when the sandbox is off | F12-T130 to T136, T151 |
+| GET | `/v1/admin/webhook-events` | 403 | ✅ | 403 | 401 | none - cross-tenant by design, filterable | F12-T140, T142 |
+| GET | `/v1/admin/webhook-events/:id` | 403 | ✅ | 403 | 401 | none - cross-tenant by design | F12-T142 |
+| POST | `/v1/webhooks/card-transactions` | n/a | n/a | n/a | **signature** | **the integration whose secret verified** | F12-T10 to T26 |
 
 Every ✅ above was executed against the running stack in the F09 end-to-end
-cycle (79 checks, 0 failures). The refusals are not inferred from decorators.
+cycle (79 checks, 0 failures) and, for the F11 and F12 rows, in their own
+suites and in the F13 demonstration (49 checks, 0 failures). The refusals are
+not inferred from decorators.
+
+### The one row that does not fit the columns
+
+`POST /v1/webhooks/card-transactions` has no manager, admin or API-key
+answer, because **none of those caller types applies to it**. The assessment
+says the card provider cannot send our API key, and it has no session, so the
+route is `@Public()` to the authentication guard and authenticates on an HMAC
+signature instead:
+
+| Caller | Answer |
+|---|---|
+| A correctly signed delivery, within the timestamp window | **202**, bound to the company whose secret verified |
+| No signature, or a wrong, malformed or stale one | **401**, one shape for every cause |
+| A signature made with another company's secret | **401** - a delivery id selects a secret, it proves nothing |
+| A browser, cross-site, with a cookie attached | **401**. The cookie is never read, and the browser cannot produce a signature |
+
+It is also the only route carrying `@WebhookExempt()`, which turns off
+`CsrfGuard`. The justification is the one that already exempts API-key
+callers: CSRF protects a credential the **browser attaches automatically**,
+and this route reads none. The decorator is opt-in per route and must never
+be placed on a route that reads the session cookie.
 
 ---
 

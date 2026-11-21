@@ -1433,6 +1433,88 @@ fixture is shared state, and shared state in a suite that asserts on counts
 produces failures that read as product defects.
 
 
+## Defects found during F13
+
+### 60. The idempotency constraint name went stale, and the tests caught it
+
+Adding `source` to the expense unique key renamed the index:
+
+```
+expenses_companyId_externalId_key  ->  expenses_companyId_source_externalId_key
+```
+
+`EXPENSE_IDEMPOTENCY_CONSTRAINT` is compared against the name **PostgreSQL
+reports**, so a stale value would make every genuine conflict fall through as
+an unrecognised error and surface as a **500** - on the single most important
+path in the application.
+
+Three suites failed immediately: the F03 negative control, the constraints
+spec and the schema spec. Each of them existed to assert something about that
+exact name.
+
+**Fix:** the constant, the two assertions, and the negative control's index
+recreation and duplicate-cleanup SQL, which both partition by the key columns.
+
+**Why it is worth recording even though nothing shipped:** this is the test
+suite doing precisely what it was written for. The failure arrived as
+`[201, 500]` where `[201, 409]` was expected, which is the exact symptom a
+user would have seen. A system without that negative control would have
+shipped a 500 on a concurrent retry.
+
+### 61. A migration that only worked because the database already had the enum
+
+Covered as AI_LOG 54, and repeated here because F13's fresh-install run is
+where it would have surfaced for a reviewer rather than for me. The hand-
+written migration was verified against a genuinely empty database in an
+isolated compose project, not against the development one that had been
+migrated incrementally all day.
+
+### 62. The guard against overlapping test runs produced a false failure
+
+The F13 regression ran all four acceptance scripts back to back. F00 passed
+18/18, F01 passed 11/11, and **F02 reported `F02-jest suite failed`** - while
+the same suite, run on its own seconds later, passed **617/617**.
+
+The script swallows the output, so reproducing it directly was the only way to
+see what it actually said:
+
+```
+Another test run already owns limaz_test (pid 201).
+```
+
+Pid 201 no longer existed by the time I looked for it.
+
+`acquireSuiteLock` used `pg_try_advisory_lock`, which answers **immediately**.
+That is right for the case the lock was built for - two runs genuinely active
+at once, deleting each other's database (AI_LOG 36). It is wrong for runs that
+are merely **adjacent**. When Jest exits, PostgreSQL has not necessarily
+noticed: the connection is closed by the operating system a moment later, and
+the advisory lock is released then. So F01's connection was still alive when
+F02's run asked for the lock.
+
+The irony is the point. The mechanism that exists because overlapping runs
+destroyed each other became a generator of failures that look exactly like
+product defects - which is what it cost here, in the final regression of the
+whole project.
+
+**Fix:** a bounded wait before refusing. Thirty seconds, polling
+`pg_try_advisory_lock` rather than switching to the blocking
+`pg_advisory_lock`, so the refusal can still report **who** holds it instead of
+hanging with no diagnosis.
+
+**Verified in both directions**, because half a fix here is worse than none:
+
+| | |
+|---|---|
+| Lock released during the wait | `[suite-lock] limaz_test is held; waiting up to 30s...` then acquires, and the suite passes |
+| Lock held past the wait | Refuses, names the pid, and prints the `pg_terminate_backend` command - the protection still works |
+
+**How it was found:** by refusing to accept "probably flaky". The suite had
+passed twice that hour, so the cheap answer was to re-run it and move on. The
+cost of that would have been a guard that silently fails any chained
+verification from now on.
+
+
 ## Running record
 
 | Date | Phase | Notes |
@@ -1461,3 +1543,4 @@ produces failures that read as product defects.
 | 2026-11-21 | F10 documentation | README rewritten for a reviewer opening the repository for the first time: quick start, verified credentials, a five-minute walkthrough, API examples, business rules, concurrency with sequence diagrams, security with what each control does NOT do, deployment and scaling with measured query plans, and every accepted limitation with its risk id. The eight decisions answered in full. Submission materials prepared, not sent |
 | 2026-11-21 | F11 implementation | Company manager provisioning, closing R-32. Two admin routes, no migration - the `User` model already carried everything. The administrator chooses the initial password, so the response carries no credential at all. Three defects recorded (51-53), two of them mine rather than the AI's. 30 new tests, 517/517 API passing, verified end to end in the browser: two managers created, a duplicate refused, and the new account signed in to its own workspace |
 | 2026-11-21 | F12 implementation | The assessment's optional card webhook bonus, built only after the core was tagged `v1.0.0-core`. HMAC-SHA256 over the raw request bytes, a per-company secret encrypted with AES-256-GCM rather than hashed (because HMAC needs the key material), a durable PostgreSQL inbox, and a `FOR UPDATE SKIP LOCKED` worker calling the SAME `ExpenseSubmissionService` a company backend reaches. Plus a sandbox simulator that signs server-side and delivers over real HTTP. Six defects recorded (54-59), one of them pre-existing since F03 and found by a webhook test: an oversized body was a 500 on every endpoint. 100 new tests, 617/617 API passing |
+| 2026-11-21 | F13 integration and delivery | Full demonstration through the application (49/49), full regression (647 tests), all four acceptance scripts, fresh installation from a clean checkout, final security audit, eight new Mermaid diagrams rendered before being committed, and the merge to `main` behind the `v1.0.0-core` tag. Three defects recorded (60-62), the last of which was the guard against overlapping test runs refusing a connection that was merely being reaped - a false failure in the project's own verification tooling, found in the final regression and fixed in both directions |

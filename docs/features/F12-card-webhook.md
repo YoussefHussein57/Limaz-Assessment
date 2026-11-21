@@ -27,6 +27,121 @@ works."*
 
 ---
 
+## 1a. The nine decisions, in one place
+
+Each is argued at length in the section named. This table exists so a reviewer
+can see the shape of the design without reading all of it.
+
+### 1. Raw-body signature verification
+
+| | |
+|---|---|
+| **Chosen** | `rawBody: true` in `main.ts`; the HMAC covers the bytes as received |
+| **Why** | `JSON.parse` + `JSON.stringify` is not the identity function |
+| **Rejected** | Verifying the parsed-and-re-serialised object; a canonical JSON form (RFC 8785) |
+| **Trade-off** | One extra Buffer per request, bounded by the existing body limit |
+| **Guarantee** | A body that differs by a single byte from the signed one is refused |
+| **Limitation** | The whole body is buffered, so the size limit is also the signature limit |
+| **Tests** | F12-T18, F12-T19, F12-U32 |
+
+### 2. Signing-key storage
+
+| | |
+|---|---|
+| **Chosen** | AES-256-GCM, key in `WEBHOOK_ENCRYPTION_KEY`, company id as AAD |
+| **Why** | HMAC verification needs the key material; no digest can stand in |
+| **Rejected** | A plaintext column; SHA-256 like API keys, which cannot work; an external KMS, which is a subsystem the assessment does not ask for |
+| **Trade-off** | Genuinely weaker than hashing - two compromises instead of one |
+| **Guarantee** | A stolen dump is inert; a secret moved between rows fails to decrypt |
+| **Limitation** | The key is in the process environment (**R-35**) |
+| **Tests** | F12-T03, F12-U10 to U15 |
+
+### 3. Trusted company identity
+
+| | |
+|---|---|
+| **Chosen** | A delivery id header selects the secret; the company comes from the integration whose secret verified |
+| **Why** | The assessment forbids trusting the payload, and the provider cannot send an API key |
+| **Rejected** | A company id in the body; a per-company URL path, which is the same information in a different place; trying every company's secret, which is O(n) per request |
+| **Trade-off** | The provider must be configured with one more value |
+| **Guarantee** | Knowing a delivery id grants nothing - verification still uses that company's secret |
+| **Limitation** | The delivery id is in admin URLs and logs; it is not a secret and is not treated as one |
+| **Tests** | F12-T17, F12-T40, F12-T41, F12-T42 |
+
+### 4. Durable acceptance
+
+| | |
+|---|---|
+| **Chosen** | A PostgreSQL `webhook_events` inbox; 202 after the commit |
+| **Why** | A 2xx is a promise the provider acts on by never retrying |
+| **Rejected** | An in-memory queue, which loses the promise on restart; Redis or BullMQ, which adds a second store that can disagree with the first |
+| **Trade-off** | Polling rather than push; one database doing two jobs |
+| **Guarantee** | Accepted means committed. Nothing accepted is lost to a restart |
+| **Limitation** | Queue throughput is database throughput (**R-37**) |
+| **Tests** | F12-T54, F12-T60 |
+
+### 5. Event deduplication
+
+| | |
+|---|---|
+| **Chosen** | `@@unique([companyId, providerEventId])`, with a payload hash to tell a retry from a conflict |
+| **Why** | The database is the only authority that wins a race |
+| **Rejected** | A check-then-insert, which both simultaneous deliveries pass; deduplicating on the full body, which breaks when the provider re-signs |
+| **Trade-off** | A conflicting reuse is a 409 the provider must be told about |
+| **Guarantee** | One row per event per company, under concurrency |
+| **Limitation** | Two companies' events are independent, which is correct and means ids are not globally unique |
+| **Tests** | F12-T50 to T53 |
+
+### 6. Expense external-id mapping
+
+| | |
+|---|---|
+| **Chosen** | `externalId = data.transactionId`, with `source = CARD_WEBHOOK` in the unique key |
+| **Why** | The guarantee is that each **transaction** becomes one expense, and an ordinary client picks the whole `externalId` itself |
+| **Rejected** | A `card:` prefix, which a client could also choose; using the event id, which breaks when two events describe one payment |
+| **Trade-off** | A schema change to a unique constraint on a populated table |
+| **Guarantee** | Namespaces cannot collide; API idempotency is unchanged |
+| **Limitation** | A second provider needs a third enum value, not a parsing rule |
+| **Tests** | F12-T91, F12-T92 |
+
+### 7. Worker claims
+
+| | |
+|---|---|
+| **Chosen** | `UPDATE ... WHERE id = (SELECT ... FOR UPDATE SKIP LOCKED LIMIT 1)` |
+| **Why** | The lock and the state change happen in one statement |
+| **Rejected** | SELECT then UPDATE, the F04 read-then-write race; an advisory lock, which serialises claims that should be parallel |
+| **Trade-off** | Raw SQL, because Prisma cannot express it |
+| **Guarantee** | Two workers never claim one event; both make progress |
+| **Limitation** | Ordering is best-effort under contention, by design |
+| **Tests** | F12-T73 |
+
+### 8. Retry and crash recovery
+
+| | |
+|---|---|
+| **Chosen** | A lease timestamp, bounded attempts incremented at claim time, exponential backoff in a column |
+| **Why** | Recovery must work without the dying process running any code |
+| **Rejected** | A heartbeat; incrementing attempts on completion, which never bounds a crash loop; a sleep, which a restart forgets |
+| **Trade-off** | A slow-but-alive worker can have its event taken - safe, because submission is idempotent |
+| **Guarantee** | At-least-once processing with idempotent business effects |
+| **Limitation** | No jitter; one worker by default (**R-37**) |
+| **Tests** | F12-T71, F12-T72, F12-T81 |
+
+### 9. Simulator security
+
+| | |
+|---|---|
+| **Chosen** | Platform-admin only, behind an explicit flag, signing in-process, posting to a fixed loopback destination |
+| **Why** | A tool that can forge correctly signed provider requests must not exist in production |
+| **Rejected** | Deriving it from `NODE_ENV`, which lies in this image; a configurable destination, which is an SSRF primitive; calling the submission service directly, which would test a path the product does not have |
+| **Trade-off** | The simulator shares a process with the API, so it is not a true external client |
+| **Guarantee** | A disabled sandbox answers 404 to a direct API call; the browser never holds a signing secret |
+| **Limitation** | Being in-process is why `scripts/send-card-webhook.mjs` exists as an independent signer |
+| **Tests** | F12-T103, F12-T110, F12-T134, F12-T150 to T152 |
+
+---
+
 ## 2. The delivery contract
 
 ```
