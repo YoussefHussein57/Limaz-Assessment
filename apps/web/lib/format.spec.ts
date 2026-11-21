@@ -1,4 +1,12 @@
-import { currencyExponent, formatDate, formatDateTime, formatMoney, pluralise } from './format';
+import {
+  currencyExponent,
+  formatDate,
+  formatDateTime,
+  formatMoney,
+  parseMajorUnits,
+  pluralise,
+  toMajorUnitString,
+} from './format';
 
 /**
  * F06-T29 and F06-T30 - money and date formatting.
@@ -104,5 +112,83 @@ describe('pluralise', () => {
     expect(pluralise(1, 'expense')).toBe('1 expense');
     expect(pluralise(2, 'expense')).toBe('2 expenses');
     expect(pluralise(1_234, 'expense')).toBe('1,234 expenses');
+  });
+});
+
+describe('F07-F23 money input conversion', () => {
+  it('turns typed major units into exact minor units', () => {
+    expect(parseMajorUnits('1250.00', 'SAR')).toEqual({ ok: true, amountMinor: 125_000 });
+    expect(parseMajorUnits('500', 'SAR')).toEqual({ ok: true, amountMinor: 50_000 });
+    expect(parseMajorUnits('0', 'SAR')).toEqual({ ok: true, amountMinor: 0 });
+    expect(parseMajorUnits('0.01', 'SAR')).toEqual({ ok: true, amountMinor: 1 });
+    expect(parseMajorUnits('  750.5  ', 'SAR')).toEqual({ ok: true, amountMinor: 75_050 });
+  });
+
+  it('is exact where float arithmetic is not', () => {
+    // THE CASES THIS FUNCTION EXISTS FOR, measured on this runtime rather
+    // than assumed. (A first version of this test asserted that
+    // `Number('1250.07') * 100` was inexact. It is not - that product is
+    // exactly 125007 - and the assertion failed. These three are real.)
+
+    // The product is simply not the integer it should be.
+    expect(Number('8.2') * 100).toBe(819.9999999999999);
+    expect(Number('1.1') * 100).toBe(110.00000000000001);
+
+    // And rounding does not always rescue it: 1.005 should be 101 minor
+    // units. `Math.round` returns 100 - wrong by one, silently, producing a
+    // perfectly valid integer the API would accept without complaint.
+    expect(Math.round(1.005 * 100)).toBe(100);
+
+    // The string path has none of these problems, because it never
+    // multiplies.
+    expect(parseMajorUnits('8.2', 'SAR')).toEqual({ ok: true, amountMinor: 820 });
+    expect(parseMajorUnits('1.1', 'SAR')).toEqual({ ok: true, amountMinor: 110 });
+    // Excess precision is refused rather than guessed at - see the next test.
+    expect(parseMajorUnits('1.005', 'SAR').ok).toBe(false);
+  });
+
+  it('refuses excess precision instead of rounding it away', () => {
+    const tooPrecise = parseMajorUnits('100.005', 'SAR');
+
+    expect(tooPrecise.ok).toBe(false);
+    // Storing 100.00 or 100.01 would decide for the manager, and they would
+    // never learn which.
+    expect(tooPrecise.ok === false && tooPrecise.reason).toContain('2 decimal places');
+  });
+
+  it('respects a zero-decimal currency', () => {
+    expect(parseMajorUnits('1000', 'JPY')).toEqual({ ok: true, amountMinor: 1_000 });
+    expect(parseMajorUnits('10.00', 'JPY').ok).toBe(false);
+  });
+
+  it('rejects empty, negative and non-numeric input', () => {
+    expect(parseMajorUnits('', 'SAR').ok).toBe(false);
+    expect(parseMajorUnits('   ', 'SAR').ok).toBe(false);
+    expect(parseMajorUnits('-50', 'SAR').ok).toBe(false);
+    expect(parseMajorUnits('abc', 'SAR').ok).toBe(false);
+    expect(parseMajorUnits('1,250.00', 'SAR').ok).toBe(false);
+    expect(parseMajorUnits('1.2.3', 'SAR').ok).toBe(false);
+    expect(parseMajorUnits('1e5', 'SAR').ok).toBe(false);
+  });
+
+  it('accepts leading zeros as the same number', () => {
+    expect(parseMajorUnits('0500.00', 'SAR')).toEqual({ ok: true, amountMinor: 50_000 });
+    expect(parseMajorUnits('000', 'SAR')).toEqual({ ok: true, amountMinor: 0 });
+  });
+
+  it('refuses an amount past the safe integer range', () => {
+    expect(parseMajorUnits('999999999999999999', 'SAR').ok).toBe(false);
+  });
+
+  it('round-trips through the editable string form', () => {
+    for (const minor of [0, 1, 99, 100, 125_000, 2_147_483_647]) {
+      const text = toMajorUnitString(minor, 'SAR');
+      expect(parseMajorUnits(text, 'SAR')).toEqual({ ok: true, amountMinor: minor });
+    }
+
+    // And the editable form carries no grouping separators - an input the
+    // user cannot type into without fighting it is worse than a plain one.
+    expect(toMajorUnitString(125_000, 'SAR')).toBe('1250.00');
+    expect(toMajorUnitString(1_000, 'JPY')).toBe('1000');
   });
 });

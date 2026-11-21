@@ -126,13 +126,10 @@ export default async function DashboardPage() {
       {pending > 0 ? (
         <div className="mt-4">
           <Alert tone="info" title={`${pluralise(pending, 'expense')} waiting for a decision`}>
-            <Link
-              href="/dashboard/expenses?status=PENDING_REVIEW"
-              className="font-medium underline underline-offset-2"
-            >
-              See what is waiting
-            </Link>
-            . Approving or rejecting from the dashboard arrives in F07.
+            <Link href="/dashboard/reviews" className="font-medium underline underline-offset-2">
+              Go to reviews
+            </Link>{' '}
+            to approve or reject.
           </Alert>
         </div>
       ) : null}

@@ -8,6 +8,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
 import { ExpensesModule } from './expenses/expenses.module';
 import { PolicyEngineEvaluator } from './expenses/policy/policy-engine.evaluator';
 import { HealthModule } from './health/health.module';
+import { PolicyModule } from './policy/policy.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { ReviewsModule } from './reviews/reviews.module';
 
@@ -51,6 +52,9 @@ import { ReviewsModule } from './reviews/reviews.module';
     // F06: the manager dashboard's aggregate figures. Read-only, and in its
     // own namespace so `summary` can never be parsed as an expense id.
     DashboardModule,
+    // F07: the manager reads and edits their own company's policy. Changes
+    // apply to NEW evaluations only - no existing expense is touched (A7).
+    PolicyModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: CsrfGuard },

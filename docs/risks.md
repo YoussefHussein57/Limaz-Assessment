@@ -475,6 +475,23 @@ evidence that supports its status. Where a mitigation is partial, the status is
 | **Manual verification** | Re-check when Prisma 7 ships a release carrying `effect > 3.22.0`, and upgrade then |
 | **Status** | `ACCEPTED` - with the exposure analysed rather than the count dismissed |
 
+### R-31 - Concurrent policy edits are last-write-wins
+
+| | |
+|---|---|
+| **Component** | `PolicyService.update` |
+| **Description** | Two managers editing the policy at the same moment is an ordinary UPDATE race. The later commit wins and the earlier one is overwritten with **no conflict reported**. There is no version column and no optimistic concurrency check |
+| **Why it is not the review problem** | A review resolution has two managers racing as the EXPECTED case, which is why ADR-004 and the conditional UPDATE exist. A policy edit is an infrequent, deliberate act by a colleague. Adding a version column here would be machinery for a race nobody has |
+| **Likelihood** | Low - it needs two managers of the same company editing within seconds |
+| **Impact** | Medium - a silently reverted setting, discovered only by looking |
+| **Severity** | **Low** |
+| **Mitigation** | The save sends a PATCH of **only the fields that changed**, so editing the limit cannot revert a category somebody else added. The window narrows from the whole policy to one field |
+| **What IS guaranteed** | A submitting expense always reads one internally consistent policy row and snapshots the object it evaluated against, so an edit landing mid-submission happened either before that read or after it - never half of it |
+| **Residual hole** | No conflict detection. An `updatedAt` precondition on the PATCH is the upgrade path |
+| **Automated verification** | None - there is no conflict behaviour to assert |
+| **Manual verification** | Step 16 of the F07 manual cycle |
+| **Status** | `ACCEPTED` - stated rather than implied to be handled |
+
 ## Summary
 
 | Severity | Open | In progress | Mitigated | Accepted |
@@ -482,7 +499,7 @@ evidence that supports its status. Where a mitigation is partial, the status is
 | Critical | - | - | R-01, R-02, R-03, R-05, R-10, R-21 | R-20 |
 | High | R-06, R-15 | - | R-04, R-07, R-08, R-12, R-14 | R-18, R-24, R-26 |
 | Medium | R-13 | - | R-16 | R-11, R-17, R-19, R-22, R-23, R-25, R-27 |
-| Low | - | - | **R-29** | R-09, R-28, R-30 |
+| Low | - | - | **R-29** | R-09, R-28, R-30, R-31 |
 
 ## Review log
 
@@ -501,3 +518,4 @@ evidence that supports its status. Where a mitigation is partial, the status is
 | 2026-11-20 | F05 completed | R-04 moved to `MITIGATED` with measured evidence (F05-T31, T33, T44 and the F05-NC1 negative control, with lock contention confirmed through `pg_blocking_pids()`). R-11 re-checked and left `ACCEPTED` - nothing in F05 touches out-of-order evaluation. R-27 re-checked: review resolution performs no deletes, and `Review -> Expense` is `onDelete: Restrict`, so a resolved review makes its expense harder to delete rather than easier |
 | 2026-11-20 | F06 completed | R-28 and R-29 added and accepted, both naming their upgrade path. R-01 re-verified on three new read endpoints with a negative control (F06-NC1) that fails when the tenant predicate is removed. R-23 re-checked and left **ACCEPTED**: no DOM test runner was added, so frontend interaction scenarios remain browser-verified and are marked as such rather than as PASS. R-25 gained direct evidence - `formatMoney` is unit-tested at the top of the int4 range. R-24 re-checked: the new pages still enforce nothing, and every refusal is the API's (F06-T07 to T10) |
 | 2026-11-21 | F06 closure | **R-29 moved to `MITIGATED`**: the category filter now reads the company's whole vocabulary from `GET /v1/dashboard/expense-categories`, bounded at 200 and flagging truncation, verified by F06-T51 to T55. R-28 stays `ACCEPTED` but the control no longer mislabels itself. **R-30 added and accepted** after analysing the dependency path rather than the audit count. R-23 re-checked and unchanged: the three remaining browser-only rows (T35, T45, T46) were executed and all three found real defects, which is evidence for the risk rather than against it |
+| 2026-11-21 | F07 completed | **R-31 added and accepted**: concurrent policy edits are last-write-wins, narrowed to the changed field by sending a partial PATCH. R-01 re-verified on the two policy endpoints (F07-B08 to B12). R-04 re-checked: F07 added no resolution path of its own and ADR-004 semantics are unchanged - the conflict case is now exercised through the UI with two independent sessions (F07-F10). R-23 unchanged: the resolution and policy flows are browser-verified and recorded as such |

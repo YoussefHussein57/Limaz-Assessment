@@ -19,8 +19,8 @@ export interface NavItem {
 const MANAGER_NAV: readonly NavItem[] = [
   { label: 'Overview', href: '/dashboard', Icon: Home },
   { label: 'Expenses', href: '/dashboard/expenses', Icon: FileText },
-  { label: 'Reviews', href: '/dashboard/reviews', Icon: ScrollText, comingIn: 'F07' },
-  { label: 'Policy', href: '/dashboard/policy', Icon: Settings, comingIn: 'F07' },
+  { label: 'Reviews', href: '/dashboard/reviews', Icon: ScrollText },
+  { label: 'Policy', href: '/dashboard/policy', Icon: Settings },
 ];
 
 const ADMIN_NAV: readonly NavItem[] = [

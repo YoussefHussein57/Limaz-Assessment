@@ -881,6 +881,48 @@ error page → API restored → press → full dashboard.
 while being untested. That is the same shape as 37 and 38, three times in one
 session.
 
+
+## Defects found during F07
+
+### 40. I asserted a floating-point bug that does not happen
+
+Writing the money-input tests, I wrote this to justify the string-arithmetic
+conversion:
+
+```js
+expect(Number('1250.07') * 100).not.toBe(125_007);
+```
+
+It failed. That product **is** exactly 125007 on this runtime.
+
+**The conclusion was right and the evidence was invented.** String arithmetic
+IS the correct approach - but I had reached for a plausible-sounding example
+rather than a measured one, and a test asserting a bug that does not exist is
+worse than no test: it fails for the wrong reason and teaches the next reader
+something false.
+
+**Fix:** I probed eleven values and used three that genuinely misbehave -
+`8.2 * 100 = 819.9999999999999`, `1.1 * 100 = 110.00000000000001`, and the
+one that actually matters, `Math.round(1.005 * 100) = 100` when it should be
+101. The comment in the test records that the first version was wrong.
+
+This is the same shape as defect 31 in F05: a correct decision propped up by
+a false justification. Twice now, and both times a test caught it.
+
+### 41. A lint rule that was not installed
+
+I wrote `// eslint-disable-next-line react-hooks/exhaustive-deps` over a
+`useMemo` in the policy form. The repository does not use the react-hooks
+plugin, so ESLint failed on the **disable comment itself**:
+`Definition for rule was not found`.
+
+**The fix was not to install the plugin.** The memo was pointless: its
+dependencies were three parsed objects rebuilt on every render, so it could
+never hit. A memo that never hits is a stale-closure risk with no upside. It
+became a plain computation and both the comment and the problem went away.
+
+The disable comment had been a signal I was working around my own design.
+
 ## Running record
 
 | Date | Phase | Notes |
@@ -903,3 +945,4 @@ session.
 | 2026-11-20 | F06 design review | A twelve-point proposal with a working HTML mockup built from the real design tokens and the real seeded rows, rather than a list of component names. The project owner approved all ten decisions and added two requirements: small, smooth open/close transitions rather than none, and a walkthrough session after delivery. Verifying the stated baseline found it was **372 tests, not 371** |
 | 2026-11-20 | F06 implementation | Three tenant-scoped read endpoints, a single-statement aggregate, a shared keyset cursor, and three pages split between Server and Client Components on a stated rule. Four defects found and fixed - one of them a hundred-times money error in my own mockup. 67 new tests (45 backend, 22 frontend), 417/417 API tests passing, 23 browser checks at six viewport widths |
 | 2026-11-21 | F06 closure | The three PARTIAL rows executed rather than described. Every one of them failed: a long merchant broke the table layout, a real backend outage produced Next's default error screen instead of the designed one, and its retry button did not retry. Four defects found and fixed, R-29 given a real endpoint, R-28 given an honest label, and test-database isolation enforced by an advisory lock |
+| 2026-11-21 | F07 implementation | The review UI and policy settings. The backend needed only two endpoints - F05 already guaranteed one resolution, so F07 is about not lying to the manager who loses that race. Pessimistic mutation, a 409 path that refreshes and names the winner, string-arithmetic money conversion. Two defects found and fixed. 23 backend tests, 9 frontend, and a conflict reproduced with two genuinely independent sessions |

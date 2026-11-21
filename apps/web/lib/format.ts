@@ -157,6 +157,91 @@ export function formatDate(iso: string): string {
   return Number.isNaN(date.getTime()) ? '—' : DATE_ONLY.format(date);
 }
 
+/**
+ * A minor-unit integer as the decimal string a person edits: 125000 -> "1250.00".
+ *
+ * The inverse of `parseMajorUnits`. No grouping separators and no currency
+ * code, because this goes INTO an `<input>` - a value with commas in it is
+ * one the user cannot edit without fighting it.
+ */
+export function toMajorUnitString(amountMinor: number, currency: string): string {
+  const exponent = currencyExponent(currency);
+  const negative = amountMinor < 0;
+  const digits = Math.abs(amountMinor).toString().padStart(exponent + 1, '0');
+
+  if (exponent === 0) {
+    return `${negative ? '-' : ''}${digits}`;
+  }
+
+  const whole = digits.slice(0, digits.length - exponent);
+  const fraction = digits.slice(digits.length - exponent);
+
+  return `${negative ? '-' : ''}${whole}.${fraction}`;
+}
+
+/** What went wrong with a typed amount, or the exact integer it means. */
+export type ParsedAmount =
+  | { readonly ok: true; readonly amountMinor: number }
+  | { readonly ok: false; readonly reason: string };
+
+/**
+ * Turns what a person typed into an exact integer number of minor units.
+ *
+ * ---------------------------------------------------------------------------
+ * WHY THIS IS STRING ARITHMETIC AND NOT `Math.round(Number(text) * 100)`
+ * ---------------------------------------------------------------------------
+ *
+ * `Number('1250.07') * 100` is `125006.99999999999`. Rounding happens to save
+ * that one - and `Math.round(1.005 * 100)` is 100, not 101. The failures are
+ * not rare enough to ignore and they are silent: the request carries a number
+ * one minor unit away from what the manager typed, the API accepts it because
+ * it is a valid integer, and nothing anywhere reports a problem.
+ *
+ * So the text is split on its decimal point and the digits are concatenated.
+ * No multiplication, no floating point, no rounding - the result is the digits
+ * the person typed, read as an integer.
+ *
+ * EXCESS PRECISION IS REFUSED, not rounded. A manager typing "100.005" for a
+ * two-decimal currency means something; silently storing 100.00 or 100.01
+ * decides for them, and they would never know which.
+ */
+export function parseMajorUnits(text: string, currency: string): ParsedAmount {
+  const trimmed = text.trim();
+
+  if (trimmed === '') {
+    return { ok: false, reason: 'Enter an amount.' };
+  }
+
+  // Digits, at most one decimal point, no sign. A limit is never negative,
+  // and refusing "-" here is clearer than accepting it and failing later.
+  if (!/^\d+(\.\d*)?$/u.test(trimmed)) {
+    return { ok: false, reason: 'Use digits only, with at most one decimal point.' };
+  }
+
+  const exponent = currencyExponent(currency);
+  const [whole = '', fraction = ''] = trimmed.split('.');
+
+  if (fraction.length > exponent) {
+    return {
+      ok: false,
+      reason:
+        exponent === 0
+          ? `${currency} has no decimal places.`
+          : `${currency} has ${exponent} decimal places.`,
+    };
+  }
+
+  // `padEnd`, not multiplication: "1250.5" becomes "1250" + "50".
+  const digits = `${whole}${fraction.padEnd(exponent, '0')}`;
+  const amountMinor = Number(digits);
+
+  if (!Number.isSafeInteger(amountMinor)) {
+    return { ok: false, reason: 'That amount is too large.' };
+  }
+
+  return { ok: true, amountMinor };
+}
+
 /** `3 expenses` / `1 expense`. Small, but it is wrong in three places if inlined. */
 export function pluralise(count: number, singular: string, plural = `${singular}s`): string {
   return `${count.toLocaleString(LOCALE)} ${count === 1 ? singular : plural}`;

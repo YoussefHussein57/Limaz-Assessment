@@ -13,7 +13,7 @@ identifier belonging to another company.
 
 ## Current state
 
-> **F00 through F06 are complete.** One
+> **F00 through F07 are complete.** One
 > `docker compose up` starts the stack, applies migrations and seeds two
 > companies. Both caller types authenticate: company backends with an API key,
 > managers and the platform admin with a database-backed session. Tenant
@@ -49,8 +49,19 @@ identifier belonging to another company.
 > There are no trends, no percentage changes and no charts. Each would have to
 > be invented - the system records no history of its own counts.
 >
-> **Still to come:** resolving a review and editing a policy from the UI (F07),
-> and the platform admin panel (F08).
+> **A manager can now do the whole job.** The review queue shows what the
+> policy flagged; opening one shows the evidence, the snapshot it was judged
+> against, and Approve/Reject behind a confirmation that names the amount and
+> the merchant. If another manager gets there first, the page says who decided
+> and what they decided rather than claiming your decision succeeded - F05
+> guarantees one transition, and F07 is the interface that does not lie about
+> it.
+>
+> The policy page edits the four company settings. Changes apply to **new**
+> evaluations: every existing expense keeps the snapshot and the decision it
+> was judged with, and four tests hold that line.
+>
+> **Still to come:** the platform admin panel (F08).
 >
 > This is an incremental build. Each feature is implemented, tested and
 > reviewed before the next one begins. The table below is the honest status.
@@ -65,7 +76,7 @@ identifier belonging to another company.
 | **F04** | Policy rules, decision precedence, frequency concurrency | **Done** - 63 new tests. **POST /v1/expenses is live** |
 | **F05** | Review lifecycle, manager resolution, concurrent safety | **Done** - 66 new tests. **The review API is live** |
 | **F06** | Manager dashboard, expense listing, filtering, expense detail | **Done** - 67 new tests, 23 browser checks at six widths. **The dashboard is live** |
-| F07 | Review and policy UI | Not started |
+| **F07** | Manager review resolution and company policy settings | **Done** - 31 new tests, conflict verified with two independent sessions. **The manager workflow is complete** |
 | F08 | Platform admin panel | Not started |
 | F09 | Cross-feature regression and security testing | Not started |
 | F10 | Final documentation and submission readiness | Not started |
@@ -196,7 +207,7 @@ npm test            # both workspaces
              Tests:      417 passed, 417 total
 
 @limaz/web   Test Suites:  2 passed,  2 total
-             Tests:       22 passed,  22 total
+             Tests:       30 passed,  30 total
 ```
 
 The API suite needs PostgreSQL. The web suite does not: it covers the two

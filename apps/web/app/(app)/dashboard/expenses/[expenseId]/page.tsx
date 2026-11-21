@@ -186,9 +186,14 @@ export default async function ExpenseDetailPage({
                     </>
                   ) : (
                     <>
-                      Approving or rejecting from here arrives in F07. The expense stays{' '}
-                      <strong className="text-text">pending review</strong> until a manager
-                      decides.
+                      This expense is waiting for a decision.{' '}
+                      <Link
+                        href={`/dashboard/reviews/${expense.review.id}`}
+                        className="font-medium text-accent underline underline-offset-2"
+                      >
+                        Open the review
+                      </Link>{' '}
+                      to approve or reject it.
                     </>
                   )}
                 </p>

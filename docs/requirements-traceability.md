@@ -39,7 +39,7 @@ however much code exists for it.
 
 | Requirement | Feature | Implementation | Evidence | Status |
 |---|---|---|---|---|
-| Per-company policy settings in the database | F01 | `Policy` model | F01-T13 | **DONE** |
+| Per-company policy settings in the database | F01, **F07** | `Policy` model; `GET`/`PATCH /v1/policy` | F01-T13, **F07-B01, B02** | **DONE** - editable by the company manager |
 | The two companies seeded with different values | F01 | fixtures | F01-T13, F01-T18f | **DONE** |
 | Amount limit rule | F04 | `amountLimitRule` - strictly greater than the limit | F04-T02, T03, T04 | **DONE** - the boundary is tested at 49,999 / 50,000 / 50,001 |
 | Frequency rule | F04 | `frequencyRule` + the COUNT inside the locked transaction | F04-T08 to T10, T16 to T25 | **DONE** - inclusive bounds, A2 counting, out-of-order documented |
@@ -68,7 +68,7 @@ however much code exists for it.
 | Requirement | Feature | Status |
 |---|---|---|
 | A person can sign in and out of the web application | F02.1 | **DONE** - F02.1-T01, T02, T03, T08 |
-| Manager dashboard: expenses, decisions, open reviews, policy editing | F02.1 (shell), **F06**, F07 | **PARTIAL** - expenses, decisions and the review outcome are **DONE** (F06-T22, T23, T27, T28); **policy editing and resolving a review are F07** |
+| Manager dashboard: expenses, decisions, open reviews, policy editing | F02.1 (shell), **F06**, **F07** | **DONE** - expenses and decisions (F06), the review queue and resolution (F07-F01 to F12), policy editing (F07-F16 to F23) |
 | Manager sees company-wide expense totals by current status | **F06** | **DONE** - one `groupBy`, one snapshot; F06-T01, T01b, T03, T04 |
 | Manager lists, searches, filters and pages their company's expenses | **F06** | **DONE** - F06-T06, T14 to T19c |
 | Manager opens one expense with every reason and the historical policy | **F06** | **DONE** - F06-T11, T12, T13 |
@@ -138,7 +138,7 @@ Recorded so they are not mistaken for done.
 | ~~Frequency correctness under concurrency~~ | **Closed in F04** | - |
 | ~~Exactly-one-winner review resolution~~ | **Closed in F05** | - |
 | ~~That the real policy engine agrees with the seeded fixtures~~ | **Closed in F04** | - |
-| Resolving a review from the dashboard | The UI is read-only; F06 shows the review outcome but cannot change it | F07 |
-| Cache invalidation after a resolution | Nothing mutates yet. The query keys are already prefixed for it | F07 |
+| ~~Resolving a review from the dashboard~~ | **Closed in F07** - verified with two independent sessions (F07-F10) | - |
+| ~~Cache invalidation after a resolution~~ | **Closed in F07** - three query families plus `router.refresh()`, verified on the queue and the dashboard (F07-F11, F12) | - |
 | API key rotation and its grace window end to end | Only the lifecycle semantics are enforced so far | F08 |
 | Admin access to a named company's data | `tenantScope()` refuses a principal with no tenant; admin routes take an explicit company id | F08 |

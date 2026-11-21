@@ -33,6 +33,37 @@ export class ApiError extends Error {
   get isClientError(): boolean {
     return this.status >= 400 && this.status < 500;
   }
+
+  /**
+   * Somebody else got there first.
+   *
+   * Not an error in the usual sense: the system worked exactly as designed
+   * and this caller simply lost a race it was always possible to lose. The UI
+   * treats it as information to show, never as a failure to retry (ADR-004).
+   */
+  get isConflict(): boolean {
+    return this.status === 409;
+  }
+
+  /**
+   * The request never got an answer, so its outcome is UNKNOWN.
+   *
+   * For a GET that is the same as a failure. For a mutation it is not: the
+   * server may have committed before the connection dropped. A caller that
+   * treats this as "nothing happened" and offers to try again can produce a
+   * second, conflicting decision.
+   */
+  get isAmbiguous(): boolean {
+    return this.status === 0;
+  }
+}
+
+/** The error body the API sends with a 409 on a review already resolved. */
+export interface ConflictDetails {
+  readonly reviewId?: string;
+  readonly outcome?: string;
+  readonly resolvedAt?: string;
+  readonly resolvedByUserId?: string;
 }
 
 /**
