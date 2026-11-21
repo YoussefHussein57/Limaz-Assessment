@@ -270,9 +270,9 @@ could not collide with the development stack. **34 checks, 0 failures.**
 
 | Step | Result |
 |---|---|
-| `git clone` of the pushed commit (`08cd518`) | 332 tracked files, 12 MB, **no `node_modules`, no `.env`** |
+| `git clone` of the pushed commit (`d824eab`) | 334 tracked files, 12 MB, **no `node_modules`, no `.env`** |
 | `cp .env.example .env` then `docker compose up --build` | exit 0 |
-| All three services healthy | **632 s from nothing**, image build included |
+| All three services healthy | **632 s with no Docker layer cache**, image build included; **29 s** with one. The first number is what a reviewer cloning this repository will actually see |
 | Migrations applied by the entrypoint | **PASS** - from the container log, not inferred |
 | Seed completed by the entrypoint | **PASS** |
 | Seeded rows | 2 companies, 3 users, 2 keys, 2 policies **with different values**, 12 expenses, 3 reviews with 1 open |
