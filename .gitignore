@@ -65,3 +65,8 @@ skills-lock.json
 
 # Playwright MCP scratch output (browser verification runs)
 .playwright-mcp/
+
+# Skill output written into the workspace. Generated, third-party, and not
+# part of this project (risk R-13).
+.rederive/
+floorplan/

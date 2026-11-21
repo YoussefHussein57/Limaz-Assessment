@@ -6,6 +6,7 @@ import { DecisionBadge, ReviewBadge, StatusBadge } from '@/components/expenses/s
 import { Card, CardHeader } from '@/components/ui/card';
 import { serverFetch } from '@/lib/api';
 import { ApiError } from '@/lib/api-error';
+import { RoleDenied } from '@/components/layout/role-denied';
 import { requireUser } from '@/lib/auth';
 import { readPolicySnapshot, type ExpenseDetail } from '@/lib/expense-types';
 import { DISPLAY_TIME_ZONE_LABEL, formatDateTime, formatMoney } from '@/lib/format';
@@ -47,7 +48,15 @@ export default async function ExpenseDetailPage({
 }: {
   params: Promise<{ expenseId: string }>;
 }) {
-  await requireUser();
+  const user = await requireUser();
+
+  // An administrator has no company workspace: `companyId` is null by
+  // construction. Refused HERE, before any `serverFetch`, so the screen says
+  // why rather than letting the API's 403 surface as 'the server did not
+  // answer' (AI_LOG 47).
+  if (user.role !== 'MANAGER') {
+    return <RoleDenied audience="manager" />;
+  }
 
   const { expenseId } = await params;
 
@@ -90,9 +99,9 @@ export default async function ExpenseDetailPage({
             {expense.merchant}
           </h1>
           <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-text-secondary">
-            <span className="font-mono text-xs">{expense.externalId}</span>
+            <span className="font-mono text-xs break-all">{expense.externalId}</span>
             <span aria-hidden="true">·</span>
-            <span>{expense.category}</span>
+            <span className="break-all">{expense.category}</span>
             <span aria-hidden="true">·</span>
             <span>{formatDateTime(expense.spentAt)}</span>
           </p>
@@ -211,10 +220,10 @@ export default async function ExpenseDetailPage({
             <CardHeader title="Submission" />
             <dl className="text-sm">
               <Row label="Employee">
-                <span className="font-mono text-xs">{expense.employeeId}</span>
+                <span className="font-mono text-xs break-all">{expense.employeeId}</span>
               </Row>
               <Row label="Reference">
-                <span className="font-mono text-xs">{expense.externalId}</span>
+                <span className="font-mono text-xs break-all">{expense.externalId}</span>
               </Row>
               <Row label="Amount">
                 <span className="tabular">
@@ -240,7 +249,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   return (
     <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-2.5 last:border-b-0">
       <dt className="text-text-secondary">{label}</dt>
-      <dd className="text-right font-medium text-text">{children}</dd>
+      <dd className="min-w-0 text-right font-medium text-text">{children}</dd>
     </div>
   );
 }

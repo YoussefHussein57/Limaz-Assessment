@@ -7,6 +7,7 @@ import { Alert } from '@/components/ui/alert';
 import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/empty-state';
 import { serverFetch } from '@/lib/api';
+import { RoleDenied } from '@/components/layout/role-denied';
 import { requireUser } from '@/lib/auth';
 import type { DashboardSummary, ExpensePage } from '@/lib/expense-types';
 import { DISPLAY_TIME_ZONE_LABEL, formatMoney, pluralise } from '@/lib/format';
@@ -46,6 +47,14 @@ export const dynamic = 'force-dynamic';
 
 export default async function DashboardPage() {
   const user = await requireUser();
+
+  // An administrator has no company workspace: `companyId` is null by
+  // construction. Refused HERE, before any `serverFetch`, so the screen says
+  // why rather than letting the API's 403 surface as 'the server did not
+  // answer' (AI_LOG 47).
+  if (user.role !== 'MANAGER') {
+    return <RoleDenied audience="manager" />;
+  }
 
   // Fetched in parallel: two independent requests, so awaiting them in
   // sequence would add the slower one's latency to the faster one's for no

@@ -21,7 +21,7 @@ however much code exists for it.
 | The company always comes from the key or the user, never the request | F02 | `principal.types.ts`, `tenantScope()`, `.strict()` DTO | **F02-T15, T15b, T27b** | **DONE** |
 | Unauthenticated callers refused | F02 | global `AuthenticationGuard` | F02-T02, T02b, T03 | **DONE** |
 | Managers cannot use admin features | F02 | `AuthorizationGuard`, `@Roles` | F02-T12, T12b | **DONE** |
-| A company can never see another's data, even knowing the id | F02 | `tenantScope()` + 404 | **F02-T13, T14, T29** | **PARTIAL** - proven through a test-only controller; re-proven on real endpoints in F03, F05, F08 |
+| A company can never see another's data, even knowing the id | F02 | `tenantScope()` + 404 | **F02-T13, T14, T29**; re-proven on every live endpoint in **F09** | **DONE** - F09 executed the whole authorization matrix against the running stack: 404 on another company's expense, review and resolve; 400 for a body-supplied `companyId`. See [endpoint-authorization.md](security/endpoint-authorization.md) |
 
 ## Section 3 - Submitting an expense
 
@@ -75,16 +75,16 @@ however much code exists for it.
 | Original automated decision and current status shown as distinct facts | **F06** | **DONE** - F06-T13, T28; `status-badges.tsx` |
 | Admin panel: companies, creation, API keys | F02.1 (shell), **F08** | **DONE** - company listing, creation, details and the full key lifecycle (F08-B01 to B42, F08-F01 to F33) |
 | Responsive, usable on a small screen | F02.1, **F06** | **DONE** - re-verified in a real browser at 360, 390, 768, 1024, 1440 and 1920 on all three new pages; F06-T39 to T44 |
-| Accessible: contrast, focus, keyboard, labels | F02.1, **F06** | **PARTIAL** - 15/15 contrast pairs measured and no new token introduced; status never carried by colour alone (F06-T47). **A full tab-order walk was not performed** (F06-T46) and no conformance claim is made |
+| Accessible: contrast, focus, keyboard, labels | F02.1, **F06**, **F09** | **PARTIAL** - 15/15 contrast pairs measured; status never carried by colour alone (F06-T47). **F09 closed the keyboard work**: keyboard-only login, dialog focus trap, Escape, focus restoration, 0 unnamed controls and 0 unlabelled inputs across every screen, and one silent error path fixed (AI_LOG 46). Still PARTIAL because **no screen-reader session was run and no conformance claim is made** |
 | Seeded credentials not exposed in the production-facing interface | F02.1 | **DONE** - F02.1-creds |
-| Clear loading and error states | F02.1, **F06** | **PARTIAL** - loading skeletons, both empty states, error boundaries and the 404 page are built and browser-verified (F06-T32, T33, T34). **A forced server failure was not injected in the browser** (F06-T35) |
+| Clear loading and error states | F02.1, **F06**, **F09** | **DONE** - skeletons, both empty states, error boundaries and the 404 page (F06-T32 to T34); a real backend outage injected in the F06 closure (F06-T35) and a real **mid-mutation** network failure injected in F09, both modes, checked against the database (F09-N01 to N12) |
 | Every rule holds when the API is called directly | F02, **F06** | **DONE** - every F06 backend test calls the API, never a UI |
 
 ## Section 7 - Tests
 
 | Requirement | Evidence | Status |
 |---|---|---|
-| Tenant isolation | F02-T13, T14, T15, **T29**; F03-T12, T20; F05-T06, T13, T37; **F06-T05, T07, T14 and F06-NC1** | **DONE** on every endpoint that exists - still to be re-proven on F08's admin routes |
+| Tenant isolation | F02-T13, T14, T15, **T29**; F03-T12, T20; F05-T06, T13, T37; **F06-T05, T07, T14 and F06-NC1**; F08-B32, B38, B40; **the live F09 matrix** | **DONE** on every endpoint that exists, including the admin routes, and re-executed end to end in F09 |
 | Idempotency, including two simultaneous requests | F03-T21 to T28 | **DONE** |
 | Concurrent resolve | F05-T31 to T38, F05-NC1 | **DONE** |
 | Which decision wins | F04-T01 to T20 | **DONE** |
@@ -107,7 +107,7 @@ however much code exists for it.
 
 | Requirement | Evidence | Status |
 |---|---|---|
-| `AI_LOG.md` with tools, prompts and a real mistake caught | [AI_LOG.md](../AI_LOG.md) - ten recorded | **DONE** |
+| `AI_LOG.md` with tools, prompts and a real mistake caught | [AI_LOG.md](../AI_LOG.md) - **50 recorded**, each with how it was noticed and what prevents recurrence | **DONE** |
 | Commit as you go | 3 commits, one per feature so far | **DONE** |
 
 ## Section 10 - Card webhook
@@ -122,7 +122,7 @@ however much code exists for it.
 | `tarek-ragab-abdelal` invited as collaborator | Confirmed by the project owner | **DONE** |
 | One `docker compose up` starts everything | F00-T01, F01-T18, F02-T20a | **DONE** |
 | A seed script fills both companies, users, keys, policies and sample data | F01-T13 to T16, F01-T18e to T18i | **DONE** |
-| README understandable on its own | [README.md](../README.md) | **PARTIAL** - updated per feature |
+| README understandable on its own | [README.md](../README.md) | **PARTIAL** - updated per feature. F10 rewrites it for a reviewer opening the repository for the first time |
 | Email the repo link by 24 Nov | - | **PENDING** - the project owner's step |
 
 ---
@@ -142,3 +142,42 @@ Recorded so they are not mistaken for done.
 | ~~Cache invalidation after a resolution~~ | **Closed in F07** - three query families plus `router.refresh()`, verified on the queue and the dashboard (F07-F11, F12) | - |
 | ~~API key rotation and its grace window end to end~~ | **Closed in F08** - rotation, the 24-hour grace, expiry and revocation all verified against real PostgreSQL (F08-B27 to B37) | - |
 | ~~Admin access to a named company's data~~ | **Closed in F08** - the company id is a path selector applied after the role check, never a proof (F08-B01 to B04, B32, B38) | - |
+
+---
+
+# Final reconciliation (F09/F10)
+
+The original assessment PDF re-read end to end, section by section, against
+what is actually in the repository. Status vocabulary as above, plus
+`ACCEPTED LIMITATION` for a gap that is real, documented and deliberate.
+
+| § | What the assessment asks for | Status | Where the evidence is |
+|---|---|---|---|
+| 1 | NestJS + PostgreSQL + an ORM; any modern frontend; multi-tenant; correct under retries and concurrent managers | **PASS** | NestJS 11, PostgreSQL 17, Prisma 7, Next.js 16. Concurrency proven with real PostgreSQL and four negative controls |
+| 2 | Two seeded companies; API-key callers and human logins; company never from the request; unauthenticated refused; managers cannot use admin features; no cross-tenant access even with a real id | **PASS** | [endpoint-authorization.md](security/endpoint-authorization.md) - the whole matrix executed live in F09 |
+| 3 | Submit an expense, get the decision and every reason; bad input never 500s; `externalId` unique per company; a retry creates no second expense and does not count twice, including simultaneous arrival | **PASS** | F03-T01 to T28; F09 end-to-end B1-B9; negative control F03-NC |
+| 4 | Per-company policy in the database, two companies seeded differently; amount limit, frequency (>3 in 60 min), blocked category; strongest decision wins; every rule that fired is listed | **PASS** | F04-T01 to T45; F09 end-to-end B1-B5b, including two rules firing and REJECT winning with both reasons returned |
+| 5 | A REVIEW opens a review; a manager approves or rejects, setting the final status; exactly one of two simultaneous resolves wins and the other is told clearly; reviewer is the logged-in manager; a record of who, when and how | **PASS** | F05-T01 to T44, F05-NC1; F07 two independent browser sessions; F09 M6-M10b and T22 |
+| 6 | Two UI areas - manager dashboard (expenses and decisions, open reviews, policy editing) and admin panel (all companies, create, API keys); every rule holds when the API is called directly | **PASS** | F06, F07, F08; every F09 refusal measured against the API with the UI bypassed |
+| 7 | Automated tests proving tenant isolation, idempotency including simultaneous requests, the concurrent resolve, and which decision wins | **PASS** | 517 automated tests; the four guarantees each have a **negative control** that fails when the mechanism is removed |
+| 8 | Eight decisions, answered in the README | **PASS** | README "The eight decisions", each backed by an ADR and named tests |
+| 9 | `AI_LOG.md` with tools, prompts, and at least one real AI mistake caught and fixed | **PASS** | 50 defects recorded, each with how it was noticed and what prevents recurrence |
+| 10 | Card webhook intake | **NOT APPLICABLE** - marked `OPTIONAL BONUS`, and the brief says to do it "only once the core works". Deliberately not started so the core could be finished and verified |
+| 11 | Private GitHub repo, `tarek-ragab-abdelal` invited, email by 24 Nov; `docker compose up` starts everything; a seed fills both companies, users, keys, policies and sample data; a README someone new can understand alone | **PASS**, except the email, which is the project owner's to send | Fresh-install verification from a clean clone in an isolated compose project; README rewritten in F10 |
+
+## Accepted limitations, in one place
+
+Nothing below is a mandatory requirement of the assessment. Each is linked to
+its risk entry.
+
+| | Limitation | Risk |
+|---|---|---|
+| 1 | A back-dated expense can evade the frequency rule (forward-only evaluation) | R-11 |
+| 2 | No automated DOM/interaction test runner; frontend behaviour is browser-verified | R-23 |
+| 3 | Keyset pagination has no backward cursor; "Older" walks a client-held trail | R-28 |
+| 4 | Three high and nineteen moderate `npm audit` findings, all in dev tooling, measured unreachable | R-30 |
+| 5 | Concurrent policy edits are last-write-wins with no conflict reported | R-31 |
+| 6 | A newly created company has no manager until one is provisioned outside the app | R-32 |
+| 7 | API key issuance is not idempotent; a lost response leaves a key nobody holds | R-33 |
+| 8 | The `Origin` check refuses a different spelling of the same host | R-34 |
+| 9 | No load testing, and no screen-reader or WCAG conformance audit | F09 §12 |

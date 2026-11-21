@@ -92,7 +92,7 @@ the machine's own locale.
 | F07-F10 | **Concurrent conflict** | **PASS (browser)** - see below | `f07-conflict-1440.png` |
 | F07-F11 | After resolution | The review left the OPEN queue; the empty state appeared | Snapshot: "0 reviews shown" |
 | F07-F12 | After resolution | Dashboard moved to Rejected **3**, "1 rejected by a manager" | `f07-dashboard-after-resolve.png` |
-| F07-F13 | Ambiguous network failure | Handled by `isAmbiguous`: refresh, then "may or may not have been recorded". **Implemented and reachable; not injected in the browser** | `resolve-actions.tsx` - marked PARTIAL |
+| F07-F13 | Ambiguous network failure | **PASS (browser, F09)** - both failure modes injected with real request interception and checked against PostgreSQL. See [F09](F09-test-matrix.md#2-f07-f13---network-failure-recovery). One defect found and fixed (AI_LOG 46) | F09-N01 to N12 |
 | F07-F14 | Unauthorized session | 401 redirects to `/login?reason=expired` | Shared with F06-T36 |
 | F07-F15 | Review not found | "That review is not here" via the 404/400 branch | `review-detail-view.tsx` |
 | F07-F16 | Policy initial load | Real configuration: 500.00, 3 / 60, GAMBLING | `f07-policy-1440.png` |
@@ -147,7 +147,7 @@ and its sessions deleted. The database was confirmed back at **12 expenses,
 
 | Gap | Why |
 |---|---|
-| F07-F13, an injected network failure mid-mutation | The branch exists and is reachable, but producing a real mid-flight disconnection in the browser was not done. **Marked PARTIAL** |
+| ~~F07-F13, an injected network failure mid-mutation~~ | **Closed in F09.** Both modes injected in a real browser and verified against the database; the gap it was hiding is AI_LOG 46 |
 | Automated frontend **interaction** tests | No DOM runner was added (R-23). Behaviour is browser-verified and recorded as such |
 | Concurrent policy edits | Last-write-wins is documented (R-31), not tested - there is no conflict behaviour to assert |
 | Load or performance testing | Not performed anywhere in this repository |

@@ -1028,6 +1028,125 @@ check quiet and left the structural hole in place for whoever added the next
 admin page.
 
 
+## Defects found during F09
+
+Five, and the pattern across them is the same: every one lived in a path that
+had been *described* rather than *executed*. Four of the five are things a
+reviewer would have hit.
+
+### 45. An acceptance check that had been failing since F02.1
+
+`bash scripts/verify-f00.sh` reported **16 passed, 1 failed** and exited 1.
+
+`F00-T04` asserted that `GET /` returns `200 text/html`. That was true when it
+was written. In F02.1 the root stopped being a page: `app/page.tsx` resolves
+the session on the server and redirects - to the role's workspace when signed
+in, to `/login` when not. From that commit onwards the check compared `307`
+against `200` and failed.
+
+**Nothing ran it again for six features.** The F06, F07 and F08 reports quoted
+F02 and F02.1 acceptance figures because those were the scripts I had been
+running; F00 and F01 were treated as settled. A regression gate nobody runs is
+not a gate, and this one would have told a reviewer the stack was broken.
+
+**Fix:** the check now asserts the real contract - an anonymous `/` redirects
+to `/login`, and `/login` itself serves `200 text/html`. Both are stronger
+than what it replaced. All four acceptance scripts now run in every gate.
+
+### 46. The approve button stayed disabled forever after a failed request
+
+Found by finally doing what F07-F13 had only described: injecting a real
+network failure in the browser.
+
+Patching `window.fetch` to throw before the request leaves the page produced
+exactly the designed behaviour - no false success, the review still `OPEN` in
+PostgreSQL, and the panel saying *"The result is not confirmed … check the
+outcome above before deciding again."*
+
+And then the Approve button was `disabled`, `aria-busy="true"`, and still
+reading **"Approving"**. Permanently. The page told the manager to decide
+again beside a control that could not be used; the only way out was a reload.
+
+`ResolveActions` set `pending` to mark which of the two buttons was working
+and never cleared it, and `Button` treats `pending` as implying `disabled`. On
+the success and conflict paths the component replaces itself with the resolved
+alert, so nothing showed. **Only the recoverable paths were left dead** - the
+precise case the feature exists to handle.
+
+**Fix:** `onSettled: () => setPending(null)`.
+
+**And a second thing the same test exposed.** The warning uses the `warning`
+tone, which deliberately carries no `role="alert"`, so to a screen reader the
+failure was *silent*: press "Yes, approve", hear nothing, find the buttons
+normal again. There is now an always-present `aria-live="polite"` region
+carrying the same sentence - rendered empty from the start, because a live
+region that appears together with its text is frequently not announced.
+
+### 47. The server answered, and the screen blamed the network
+
+A platform administrator opening `/dashboard` got:
+
+> **Could not load the overview** - The server did not answer. Nothing was
+> changed - this page only reads. [Try again]
+
+The server had answered. It answered **403**: every expense, review and policy
+route is `@Roles('MANAGER')`, and an administrator has `companyId: null` by
+construction. The page fetched first, the fetch threw, and the error boundary
+reported an authorisation decision as an outage - under a retry button that
+could never succeed.
+
+This is the mirror of AI_LOG 44, and it has the same shape: the role was
+checked somewhere other than where the data is read. A gate in a layout would
+not have fixed it either, for the reason 44 records - the pages still render
+and still fetch.
+
+**Fix:** each of the six manager pages checks `user.role` **before** its first
+`serverFetch` and returns a `<RoleDenied audience="manager" />` screen. The
+admin side now uses the same component. Verified by reading the RSC payload
+for five manager routes as an administrator: the denial is there, and none of
+`Total expenses`, `Recent expenses` or `Auto-approval limit` is.
+
+### 48. A sixty-character reference pushed the detail page off the screen
+
+F06's closure fixed the expense **table** with `table-fixed` and percentage
+widths, and I checked it with a 200-character merchant. A merchant has spaces,
+so it wraps.
+
+An `externalId` does not. A real client identifier - `ext-xxxxxx…`, 64
+characters, no break opportunity - overflowed the expense **detail** page by
+**192px at 360** and **129px at 1440**: the same page-level horizontal scroll
+the table fix was supposed to end, on the page next door. A 36-character
+`category` did the same thing for a further 7px.
+
+**Fix:** `break-all` on the identifier and category values on both detail
+screens, and `min-w-0` on the definition-list cells so they can shrink. Three
+widths re-measured: 0px overflow at 360, 390 and 1440.
+
+**The lesson is about the test input, not the CSS.** "Long content" is not one
+case. A long *sentence* and a long *token* fail differently, and only the
+second one is what an integration actually sends.
+
+### 49. The seed refused to start once anybody used the application
+
+The one a reviewer was most likely to hit, and I hit it three times before I
+stopped treating it as my own mess.
+
+The seed verifies its own work by counting rows, and the counts were
+**whole-table**: `expenses: expected 12, found 13`. So the moment anyone
+submitted an expense - which the README invites, with a `curl` example - the
+next `docker compose up` failed and the API container went into a restart
+loop. Nothing in the message suggested the extra row was theirs and harmless.
+
+The guard's purpose is to catch a **partial or doubled seed**. Counting whole
+tables answered a different question: *is this database untouched?*
+
+**Fix:** every count is scoped to the fixture ids. The guard still catches a
+seed that did not land, and application data is none of its business.
+Verified by leaving a submitted expense in place and restarting twice: both
+starts healthy, the banner still reporting its own 12 expenses while the table
+held 13.
+
+
 ## Running record
 
 | Date | Phase | Notes |
@@ -1052,3 +1171,4 @@ admin page.
 | 2026-11-21 | F06 closure | The three PARTIAL rows executed rather than described. Every one of them failed: a long merchant broke the table layout, a real backend outage produced Next's default error screen instead of the designed one, and its retry button did not retry. Four defects found and fixed, R-29 given a real endpoint, R-28 given an honest label, and test-database isolation enforced by an advisory lock |
 | 2026-11-21 | F07 implementation | The review UI and policy settings. The backend needed only two endpoints - F05 already guaranteed one resolution, so F07 is about not lying to the manager who loses that race. Pessimistic mutation, a 409 path that refreshes and names the winner, string-arithmetic money conversion. Two defects found and fixed. 23 backend tests, 9 frontend, and a conflict reproduced with two genuinely independent sessions |
 | 2026-11-21 | F08 implementation | Platform administration: companies, onboarding in one transaction, and the API key lifecycle. Rotation uses a conditional update rather than an advisory lock, because the invariant is one row rather than F04's count across many. Two defects: a key label derived from the build instead of the deployment, and - in my own verification - a live key written into a screenshot by a redaction that React undid. 42 new tests, 487/487 passing |
+| 2026-11-21 | F09 integration and hardening | Executed the paths earlier reports described. Five defects, four of them things a reviewer would have hit: an acceptance check failing since F02.1, a resolve button left permanently disabled after a failed request, an administrator told "the server did not answer" when the server had refused, a 64-character identifier pushing the expense detail 192px off a 360px screen, and a seed that refused to start once anybody used the application. Both F07-F13 network failure modes injected for real and checked against the database |

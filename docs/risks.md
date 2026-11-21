@@ -475,6 +475,40 @@ evidence that supports its status. Where a mitigation is partial, the status is
 | **Manual verification** | Re-check when Prisma 7 ships a release carrying `effect > 3.22.0`, and upgrade then |
 | **Status** | `ACCEPTED` - with the exposure analysed rather than the count dismissed |
 
+**F09 re-review, with three things added to the above.**
+
+1. **The vulnerable symbol is not present in the consumer.** `TemplateLiteral`
+   appears **0 times** anywhere in `@prisma/config`, whose only direct
+   `effect` import is `effect/Function`. So the sink is not merely
+   unreachable from a request - the code that would call it is not in the
+   calling package at all. `apps/api/dist/main.js` contains **0** references
+   to `effect` or `@prisma/config`, and the API source imports
+   `@prisma/client` (23 times) and `@prisma/adapter-pg` (twice) and nothing
+   else.
+
+2. **A compatible upgrade was attempted and does not take.**
+   `@prisma/config@7.10.1` pins `effect` to **exactly** `3.20.0`; a patched
+   `3.22.5` exists. An `overrides` entry - both the flat and the
+   `@prisma/config`-scoped form - was added and `npm install` run. **npm
+   10.9.3 reported "up to date" and left `3.20.0` resolved**, recording no
+   override in the lockfile. Making it take effect means deleting and
+   regenerating `package-lock.json`, re-resolving 907 packages days before
+   submission. That trades a measured-unreachable advisory for a real risk to
+   the reproducible build, so it was reverted rather than forced.
+
+3. **Nineteen moderate findings share the same shape.** `jest` and
+   `@nestjs/cli` reach `glob` (GHSA-3g3m-2fjr-6pw4) and `minimatch`
+   (GHSA-g3hv-75wg-m249), both denial-of-service classes against a local
+   build. npm's proposed fix is a major **downgrade** of Jest to 29.
+
+**One residual worth stating plainly, because it is not in the row above.**
+The runtime image keeps the **whole** dependency tree, devDependencies
+included, because the entrypoint needs the Prisma CLI. So `jest`,
+`@nestjs/cli` and `effect` are on disk in the production image even though
+nothing executes them. Running migrations as a separate job and pruning the
+image is the proper fix and is **not done**; it is named here rather than
+implied.
+
 ### R-31 - Concurrent policy edits are last-write-wins
 
 | | |
@@ -492,6 +526,20 @@ evidence that supports its status. Where a mitigation is partial, the status is
 | **Manual verification** | Step 16 of the F07 manual cycle |
 | **Status** | `ACCEPTED` - stated rather than implied to be handled |
 
+**F09 re-review against the original assessment.** Section 6 asks that a
+manager "edits the company's policy settings". It says nothing about
+concurrent editing, and nothing in sections 2-8 requires conflict detection
+for it - unlike section 5, which explicitly requires that two managers
+resolving the same review produce exactly one winner and that the other "is
+told clearly". The asymmetry in this codebase matches the asymmetry in the
+brief. **No version column was added.** What F09 did verify is the guarantee
+that actually matters for correctness: an expense is judged against **one
+internally consistent policy row**, and changing the policy afterwards leaves
+the historical decision, its snapshot, its rule hits and any human resolution
+untouched - measured in the end-to-end cycle (P1-P5, including a replayed
+idempotent retry that still returns the ORIGINAL decision after the limit was
+raised).
+
 ### R-32 - A newly created company has no manager
 
 | | |
@@ -508,6 +556,16 @@ evidence that supports its status. Where a mitigation is partial, the status is
 | **Manual verification** | Step 8 of the F08 manual cycle |
 | **Status** | `ACCEPTED` - stated in the interface a person actually looks at |
 
+**F09 re-review against the original assessment.** Section 2 asks for **two
+seeded companies**, a manager for each and a platform admin; section 6 asks
+that the admin panel let the platform admin "see all companies, creates new
+ones and manages their API keys". Creating manager accounts is not among
+them, and the seeded managers that section 2 does require exist. So the scope
+stands and **no user-management subsystem was built**. What F09 added is a
+documented, test-only provisioning recipe in the README, so a reviewer who
+wants to drive a *newly created* company through the manager flow can, without
+the application ever inventing a password.
+
 ### R-33 - API key issuance is not idempotent
 
 | | |
@@ -523,6 +581,31 @@ evidence that supports its status. Where a mitigation is partial, the status is
 | **Automated verification** | None - the failure is a lost response, which the test harness cannot produce faithfully |
 | **Manual verification** | Review the key list after any administrative action that appeared to fail |
 | **Status** | `ACCEPTED` - with the recovery path named and made visible |
+
+**F09 re-review.** The assessment's decision 6 asks how keys are stored and
+what rotation looks like, not for idempotent issuance, so no idempotency
+framework was built. The recovery workflow is now written down where somebody
+would actually look - the README's key-management section - as four steps:
+refresh the key list, identify the key nobody holds the value of (it is the
+newest `ACTIVE` row the administrator did not record), revoke it, issue a
+replacement deliberately. F09 re-confirmed the property that makes this safe:
+every secret-returning mutation carries `retry: false`, so an ambiguous
+network failure cannot mint a second credential by itself.
+
+### R-34 - The Origin check refuses a different spelling of the same host
+
+| | |
+|---|---|
+| **Component** | `CsrfGuard`, `APP_ORIGIN` |
+| **Description** | The server-side `Origin` check compares the header **exactly** against `APP_ORIGIN`. A browser pointed at `http://127.0.0.1:3000` sends that spelling, which does not equal `http://localhost:3000`, so every state-changing request - login included - is refused `403` with no explanation a reviewer could act on |
+| **How it was found** | F09's own end-to-end harness used `127.0.0.1` and could not log in. The control was working; the harness was wrong |
+| **Why the check is not relaxed** | Accepting "any loopback spelling" means parsing and classifying the Origin instead of comparing it. An exact comparison is the property that makes this layer worth having, and the F02 negative control depends on it |
+| **Likelihood** | Low - the README names the URL |
+| **Impact** | Low - a confusing refusal, not a security hole |
+| **Severity** | **Low** |
+| **Mitigation** | The README's quick start now says which origin to open and that `APP_ORIGIN` must match it, with the symptom named so it is recognisable |
+| **Automated verification** | F02-T30-live asserts a foreign Origin is refused |
+| **Status** | `ACCEPTED` - documented where a reviewer will hit it |
 
 ## Summary
 

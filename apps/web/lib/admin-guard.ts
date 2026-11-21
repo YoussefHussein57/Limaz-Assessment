@@ -29,6 +29,21 @@ import { getCurrentUser } from './auth';
  * NONE OF THIS IS THE SECURITY BOUNDARY. The API answers 403 to a manager
  * whatever the browser renders (F08-B02, F08-B02b). This keeps the payload
  * honest; the guards keep the data safe.
+ *
+ * ---------------------------------------------------------------------------
+ * THE MIRROR CASE HAS NO HELPER, DELIBERATELY
+ * ---------------------------------------------------------------------------
+ *
+ * An ADMINISTRATOR reaching a manager page is the same problem and is solved
+ * the same way, but without a function: those pages already hold the user from
+ * `requireUser()`, so they check `user.role` directly and return
+ * `<RoleDenied audience="manager" />` BEFORE any `serverFetch` runs. A second
+ * helper would mean a second session lookup for an answer already in hand.
+ *
+ * Checking before the fetch is the whole point. Until F09 those pages fetched
+ * first, the API answered 403, and the error boundary reported *"The server
+ * did not answer"* over a "Try again" that could never succeed - the network
+ * blamed for an authorisation decision (AI_LOG 47).
  */
 export async function isPlatformAdmin(): Promise<boolean> {
   const user = await getCurrentUser();

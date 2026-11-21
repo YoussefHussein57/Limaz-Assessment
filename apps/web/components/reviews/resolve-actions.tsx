@@ -84,6 +84,21 @@ export function ResolveActions({ review }: { review: ReviewDetail }) {
       }
     },
 
+    /**
+     * Clear the per-button pending flag however the mutation ends.
+     *
+     * `pending` implies `disabled` in `Button`, so leaving it set after a
+     * FAILED request leaves that button permanently disabled and permanently
+     * announcing "Approving" - while the alert beside it tells the manager to
+     * look at the outcome and decide again. On the success and conflict paths
+     * the component swaps itself for the resolved alert, so nothing showed;
+     * it was only the recoverable paths that were left dead, which is exactly
+     * the case F07-F13 exists to cover (AI_LOG 46).
+     */
+    onSettled: () => {
+      setPending(null);
+    },
+
     // A 4xx will not become a 2xx by asking again, and this request is NOT
     // idempotent in the general case: a blind retry by a different manager,
     // or with a different decision, is a second attempt at a decision.
@@ -112,6 +127,31 @@ export function ResolveActions({ review }: { review: ReviewDetail }) {
 
   return (
     <div className="flex flex-col gap-3 border-t border-border px-5 py-4">
+      {/*
+        An ALWAYS-PRESENT polite live region, carrying the same sentence the
+        panel shows visually.
+
+        Without it the outcome of a failed resolution is silent to a screen
+        reader: the warning tone carries no `role="alert"` by design (a live
+        region that interrupts is the wrong tool for most of this interface),
+        and once the request fails the buttons simply return to normal. The
+        person who pressed "Yes, approve" would be told nothing at all.
+
+        It is rendered empty from the start rather than appearing with its
+        text, because a live region added at the same moment as its content is
+        frequently not announced. `sr-only` keeps it out of the layout, so the
+        visual panel below is unchanged. `polite`, not `assertive`: this
+        follows an action the reader just took and need not interrupt.
+        Found during the F07-F13 injection (AI_LOG 46).
+      */}
+      <p aria-live="polite" aria-atomic="true" className="sr-only">
+        {ambiguous
+          ? 'The result is not confirmed. The connection failed before the server answered, so this decision may or may not have been recorded. Check the outcome before deciding again.'
+          : mutation.isError && !conflict
+            ? 'Your decision could not be recorded. Nothing was changed.'
+            : ''}
+      </p>
+
       {ambiguous ? (
         <Alert tone="warning" title="The result is not confirmed">
           The connection failed before the server answered, so this decision may or may not have

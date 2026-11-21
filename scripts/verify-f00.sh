@@ -236,17 +236,32 @@ fi
 # -----------------------------------------------------------------------------
 section "F00-T04  web serves a page"
 
+# The root stopped being a page in F02.1: `app/page.tsx` resolves the session
+# on the server and redirects - to the role's workspace when signed in, to
+# /login when not. This check asserted `200 text/html` on `/` and so began
+# failing the moment that landed, and nothing ran it again until F09
+# (AI_LOG 45). The contract it asserts now is the real one.
 if [ "$STACK_UP" -eq 1 ]; then
-  WEB_CODE="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${WEB_PORT}/" 2>/dev/null)"
-  WEB_TYPE="$(curl -s -o /dev/null -w '%{content_type}' "http://127.0.0.1:${WEB_PORT}/" 2>/dev/null)"
+  ROOT_CODE="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${WEB_PORT}/" 2>/dev/null)"
+  ROOT_TO="$(curl -s -o /dev/null -w '%{redirect_url}' "http://127.0.0.1:${WEB_PORT}/" 2>/dev/null)"
 
-  if [ "$WEB_CODE" = "200" ] && echo "$WEB_TYPE" | grep -q "text/html"; then
-    pass "F00-T04" "200 text/html"
+  if echo "$ROOT_CODE" | grep -qE '^30[1278]$' && echo "$ROOT_TO" | grep -q '/login$'; then
+    pass "F00-T04" "anonymous / redirects to /login (${ROOT_CODE})"
   else
-    fail "F00-T04" "code=${WEB_CODE} type=${WEB_TYPE}"
+    fail "F00-T04" "code=${ROOT_CODE} location=${ROOT_TO:-none}"
+  fi
+
+  LOGIN_CODE="$(curl -s -o /dev/null -w '%{http_code}' "http://127.0.0.1:${WEB_PORT}/login" 2>/dev/null)"
+  LOGIN_TYPE="$(curl -s -o /dev/null -w '%{content_type}' "http://127.0.0.1:${WEB_PORT}/login" 2>/dev/null)"
+
+  if [ "$LOGIN_CODE" = "200" ] && echo "$LOGIN_TYPE" | grep -q "text/html"; then
+    pass "F00-T04b" "/login serves 200 text/html"
+  else
+    fail "F00-T04b" "code=${LOGIN_CODE} type=${LOGIN_TYPE}"
   fi
 else
   skip "F00-T04" "stack is not up"
+  skip "F00-T04b" "stack is not up"
 fi
 
 # -----------------------------------------------------------------------------

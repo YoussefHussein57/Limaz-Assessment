@@ -179,14 +179,36 @@ export async function seed(prisma: PrismaClient): Promise<SeedCounts> {
     { timeout: 60_000 },
   );
 
+  // ---------------------------------------------------------------------
+  // Counted BY FIXTURE ID, not across the whole table.
+  //
+  // The point of this count is for the seed to check its own work: did every
+  // upsert land, and did none of them double? Counting whole tables answered
+  // a different question - "is this database untouched?" - and that made the
+  // stack refuse to restart as soon as anybody used it. The README invites a
+  // reviewer to POST an expense with curl; the next `docker compose up` then
+  // died with "expenses: expected 12, found 13" and the API container went
+  // into a restart loop, with nothing saying the extra row was theirs
+  // (AI_LOG 49).
+  //
+  // Scoped to the fixture ids, the guard still catches a partial or doubled
+  // seed, and application data is simply none of its business.
+  // ---------------------------------------------------------------------
+  const expenseIds = EXPENSES.map((e) => e.id);
+  const reviewIds = EXPENSES.flatMap((e) => (e.review ? [e.review.id] : []));
+
   return {
-    companies: await prisma.company.count(),
-    policies: await prisma.policy.count(),
-    users: await prisma.user.count(),
-    apiKeys: await prisma.apiKey.count(),
-    expenses: await prisma.expense.count(),
-    ruleHits: await prisma.ruleHit.count(),
-    reviews: await prisma.review.count(),
-    openReviews: await prisma.review.count({ where: { state: 'OPEN' } }),
+    companies: await prisma.company.count({ where: { id: { in: COMPANIES.map((c) => c.id) } } }),
+    policies: await prisma.policy.count({
+      where: { id: { in: COMPANIES.map((c) => c.policy.id) } },
+    }),
+    users: await prisma.user.count({ where: { id: { in: USERS.map((u) => u.id) } } }),
+    apiKeys: await prisma.apiKey.count({ where: { id: { in: API_KEYS.map((k) => k.id) } } }),
+    expenses: await prisma.expense.count({ where: { id: { in: expenseIds } } }),
+    // By owning expense, not by id: rule hits are upserted on
+    // `(expenseId, ruleCode)`, so that is the invariant the seed maintains.
+    ruleHits: await prisma.ruleHit.count({ where: { expenseId: { in: expenseIds } } }),
+    reviews: await prisma.review.count({ where: { id: { in: reviewIds } } }),
+    openReviews: await prisma.review.count({ where: { id: { in: reviewIds }, state: 'OPEN' } }),
   };
 }

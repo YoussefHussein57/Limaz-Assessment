@@ -12,6 +12,15 @@ export default tseslint.config(
       '**/coverage/**',
       '**/generated/**',
       '**/next-env.d.ts',
+      // Agent tooling installed into the workspace by a Claude Code skill.
+      // Gitignored and not part of this project - linting somebody else's
+      // bundled assets turns `npm run verify` red for code nobody here can
+      // change or defend (risk R-13).
+      '.agents/**',
+      '.claude/**',
+      '.rederive/**',
+      '.playwright-mcp/**',
+      'floorplan/**',
     ],
   },
   js.configs.recommended,

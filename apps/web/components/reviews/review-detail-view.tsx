@@ -110,9 +110,9 @@ export function ReviewDetailView({ reviewId }: { reviewId: string }) {
             {expense.merchant}
           </h1>
           <p className="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-text-secondary">
-            <span className="font-mono text-xs">{expense.externalId}</span>
+            <span className="font-mono text-xs break-all">{expense.externalId}</span>
             <span aria-hidden="true">·</span>
-            <span>{expense.category}</span>
+            <span className="break-all">{expense.category}</span>
             <span aria-hidden="true">·</span>
             <span>{formatDateTime(expense.spentAt)}</span>
           </p>
@@ -218,10 +218,10 @@ export function ReviewDetailView({ reviewId }: { reviewId: string }) {
             <CardHeader title="Submission" />
             <dl className="text-sm">
               <Row label="Employee">
-                <span className="font-mono text-xs">{expense.employeeId}</span>
+                <span className="font-mono text-xs break-all">{expense.employeeId}</span>
               </Row>
               <Row label="Reference">
-                <span className="font-mono text-xs">{expense.externalId}</span>
+                <span className="font-mono text-xs break-all">{expense.externalId}</span>
               </Row>
               <Row label="Spent">{formatDateTime(expense.spentAt)}</Row>
               <Row label="Received">{formatDateTime(review.receivedAt)}</Row>
@@ -253,7 +253,7 @@ function Row({ label, children }: { label: string; children: React.ReactNode }) 
   return (
     <div className="flex items-start justify-between gap-4 border-b border-border px-5 py-2.5 last:border-b-0">
       <dt className="text-text-secondary">{label}</dt>
-      <dd className="text-right font-medium text-text">{children}</dd>
+      <dd className="min-w-0 text-right font-medium text-text">{children}</dd>
     </div>
   );
 }

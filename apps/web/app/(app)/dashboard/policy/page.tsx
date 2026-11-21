@@ -1,5 +1,6 @@
 import { PolicyForm } from '@/components/policy/policy-form';
 import { PageHeader } from '@/components/layout/page-header';
+import { RoleDenied } from '@/components/layout/role-denied';
 import { requireUser } from '@/lib/auth';
 
 /**
@@ -13,6 +14,14 @@ export const dynamic = 'force-dynamic';
 
 export default async function PolicyPage() {
   const user = await requireUser();
+
+  // An administrator has no company workspace: `companyId` is null by
+  // construction. Refused HERE, before any `serverFetch`, so the screen says
+  // why rather than letting the API's 403 surface as 'the server did not
+  // answer' (AI_LOG 47).
+  if (user.role !== 'MANAGER') {
+    return <RoleDenied audience="manager" />;
+  }
 
   return (
     <>
