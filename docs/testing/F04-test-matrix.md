@@ -108,6 +108,7 @@ does not fail the suite.
 | ID | Scenario | Expected | Result |
 |---|---|---|---|
 | F04-T26 | **Five simultaneous distinct expenses**, one employee, one instant | **3 APPROVE, 2 REVIEW, 2 OPEN reviews, 2 FREQUENCY hits** | **PASS** |
+| F04-T26b | **Eight simultaneous expenses with SKEWED `spentAt`** (milliseconds apart, one window). Added in F13 for MIN-03 - F04-T26 pins one instant, so the suite was structurally blind to this case | The earliest `spentAt` **always** APPROVEs however late it arrives; no recorded count exceeds its row rank in `spentAt` order; all eight persist. The approval COUNT is deliberately not asserted - it varies with lock order | **PASS** |
 | F04-T27 | Five simultaneous identical retries | One `201`, four `200`, one row | **PASS** |
 | F04-T28 | Three simultaneous conflicting payloads | One `201`, two `409`, stored row is the winner's | **PASS** |
 | F04-T29 | Four + four across two companies | Independent counts: A reviews its fourth (max 3), B reviews none (max 5) | **PASS** |

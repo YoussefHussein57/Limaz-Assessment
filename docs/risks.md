@@ -171,21 +171,29 @@ evidence that supports its status. Where a mitigation is partial, the status is
 | **What closed it** | The risk was that a concurrency test could pass without exercising anything. Both mechanisms are now demonstrated to fail when removed, which is the only evidence that the passing version proves something. **F04-NC2 additionally guards the guard**: a barrier whose participants cannot all arrive fails in seconds with a named error instead of hanging |
 | **Residual** | A FUTURE concurrency test could still be written without a negative control. The convention is documented in both matrices; nothing enforces it |
 
-### R-11 - A back-dated expense evades the frequency rule
+### R-11 - Out-of-order arrival evades the frequency rule
+
+> **Widened in F13 after the QA regression pass (MIN-03).** This entry used to
+> be titled "a back-dated expense evades the frequency rule" and described
+> only deliberate or late backfill, with a worked example an hour apart. That
+> was too narrow, and the narrowness mattered: the **same** hole opens on
+> ordinary concurrent live traffic, which is the exact traffic the frequency
+> rule exists to catch. The mechanism is unchanged; the scope was understated.
 
 | | |
 |---|---|
 | **Component** | Policy evaluation |
-| **Description** | Forward-only evaluation never looks ahead, so an expense submitted with an earlier `spentAt` can receive APPROVE even though it is logically the fourth in its own window |
-| **Likelihood** | Medium |
+| **Description** | Evaluation looks only backwards from the submitted `spentAt`, so an expense whose `spentAt` is earlier than one already decided does not see it. It can receive APPROVE although it is logically the fourth in its own window. **This happens whenever arrival order differs from `spentAt` order** - by back-dating, by a delayed or retried integration, by a card provider's own batching, and by ordinary concurrency, where several requests are in flight at once and carry timestamps milliseconds apart |
+| **Likelihood** | **Medium-high** - raised in F13. Back-dating alone is uncommon; a concurrent burst is not. Any company backend submitting in parallel produces one |
 | **Impact** | Medium |
 | **Severity** | Medium |
-| **Mitigation (partial)** | `spentAt` bounded to 5 minutes in the future and 90 days in the past; `receivedAt` stored on every expense so the gap is visible to a reviewer |
-| **Residual hole** | **The bypass remains possible within those bounds.** Closing it needs retroactive re-evaluation (rejected) or a sliding sub-window search (deferred) - see ADR-002 |
-| **Automated verification** | **F04-T24** builds the exact sequence from ADR-002 - 10:10, 10:20, 10:30, then a late 10:05 - and asserts the late expense is APPROVE with no reasons, and that the three earlier decisions are untouched. **F04-T25** then submits at 10:35 and asserts a count of 5. These tests **document** the bypass; they do not prevent it |
-| **Manual verification** | - |
+| **Mitigation (partial)** | `spentAt` bounded to 5 minutes in the future and 90 days in the past; `receivedAt` stored on every expense so the gap between "when it was spent" and "when we heard" is visible to a reviewer on every row |
+| **Residual hole** | **The bypass remains possible within those bounds, and it is wider than a back-dating risk.** Closing it needs retroactive re-evaluation (rejected) or a sliding sub-window search (deferred) - see ADR-002 |
+| **Automated verification** | **F04-T24** builds the exact sequence from ADR-002 - 10:10, 10:20, 10:30, then a late 10:05 - and asserts the late expense is APPROVE with no reasons, and that the three earlier decisions are untouched. **F04-T25** then submits at 10:35 and asserts a count of 5. **F04-T26b** (added in F13) submits a concurrent burst with `spentAt` values milliseconds apart and asserts the two invariants that hold on every interleaving: the earliest `spentAt` always approves however late it arrives, and no expense's recorded count can exceed its rank in `spentAt` order. These tests **document** the bypass; they do not prevent it |
+| **Why the count is not asserted** | The number of approvals in such a burst varies with lock order, which is undetermined - the QA pass observed 3 to 7 of ten against a limit of 3. Asserting a number would be flaky by construction, so F04-T26b asserts the mechanism instead |
+| **Manual verification** | QA regression pass, 21 November 2026, cycle 6 case C6.15 - reproduced on every run |
 | **Status** | `ACCEPTED` - knowingly carried, not eliminated |
-| **Explicitly NOT mitigated by the advisory lock** | The lock added in F04 orders concurrent writers. This is a property of evaluating only backwards in time, and the two are unrelated. Claiming the lock closes this would be the kind of overstatement that makes a risk register useless |
+| **Explicitly NOT mitigated by the advisory lock** | The lock added in F04 orders concurrent writers, and F04-T26 shows it working: ten submissions sharing one `spentAt` approve exactly three, deterministically, every run. It does not help here. Serialising the writers does not change what each one is allowed to see, and a serialised transaction still evaluates only backwards. Claiming the lock closes this would be the kind of overstatement that makes a risk register useless |
 
 ### R-12 - Cross-origin cookie misconfiguration
 
@@ -285,10 +293,11 @@ evidence that supports its status. Where a mitigation is partial, the status is
 | **Impact** | High - any action the signed-in user can take |
 | **Severity** | High |
 | **Mitigation (partial)** | `HttpOnly` stops the token being read and exfiltrated, so the session cannot be used elsewhere. React escapes by default |
-| **Residual hole** | **The attacker does not need to read the cookie.** They act from inside the page. Closing this needs a Content-Security-Policy and discipline about rendering user-supplied content - neither is built |
+| **Residual hole** | **The attacker does not need to read the cookie.** They act from inside the page. Closing this needs a Content-Security-Policy with a `script-src` directive and discipline about rendering user-supplied content - **neither is built**. A `frame-ancestors` directive was added in F13, but that closes R-39, not this: it governs who may frame the page, not what may execute inside it |
 | **Automated verification** | None, and that is the point: the CSRF suite cannot catch this |
 | **Manual verification** | Review of every place F06 to F08 render user input |
 | **Status** | `ACCEPTED` - stated rather than implied |
+| **Do not misread the F13 header work** | The web tier now sends a `Content-Security-Policy` header. It carries **one directive**, `frame-ancestors 'none'`. The presence of the header name is not the presence of a content security policy, and nothing in F13 reduces this risk |
 
 ### R-19 - Login is not rate limited
 
@@ -692,14 +701,50 @@ network failure cannot mint a second credential by itself.
 | **Mitigation** | None implemented. The gap is **answered in full** in the README and in [F12-card-webhook.md](../features/F12-card-webhook.md) §9, with the three approaches ranked by cost: an id-gap check (only if ids are sequential, which the assessment's `evt_8f2c1` gives no reason to think), a reconciliation job against a provider listing API (the real answer), and a liveness alert on companies that have gone quiet (cheap, weak, genuinely useful) |
 | **Status** | `ACCEPTED` - an explained gap, which is what the assessment asks for here rather than an implementation |
 
+### R-39 - The dashboard could be framed by any origin
+
+> Raised and closed in F13, from the QA regression pass (MIN-01). It had never
+> been written down, which is the part worth admitting: R-18 accepted the
+> absence of a Content-Security-Policy but said nothing about clickjacking, so
+> this was not a trade-off anybody had weighed.
+
+| | |
+|---|---|
+| **Component** | Browser session security, web tier |
+| **Description** | Neither tier sent `X-Frame-Options` or a `frame-ancestors` directive, so any page anywhere could load the dashboard in an invisible iframe and sit a decoy over a real control |
+| **Why it mattered here specifically** | The session cookie is `SameSite=Lax`. That blocks a cross-site **POST**, but not a framed top-level **GET** - the frame loads fully authenticated. And the application has one-click state-changing confirmations: approving or rejecting an expense is a click behind a dialog, which is the exact target shape this attack is built for |
+| **Likelihood** | Low - it needs the victim signed in and on the attacker's page |
+| **Impact** | Medium - an approval or rejection the manager did not intend, with their name on the audit record |
+| **Severity** | Medium |
+| **Mitigation** | **Implemented in F13.** The web tier sends `Content-Security-Policy: frame-ancestors 'none'` and `X-Frame-Options: DENY` on every route. They agree deliberately: the application is never framed by anything, so the strictest value costs nothing, and the older header is kept for the browsers that read only it |
+| **Automated verification** | None. This is a header assertion, and it is verified by request rather than by suite - see the manual row |
+| **Manual verification** | `curl -D -` against the running web tier, F13 |
+| **Status** | `MITIGATED` - verified by response header |
+| **What it does NOT close** | R-18. Script already running inside the page is unaffected by who is allowed to frame it |
+
+### R-40 - Both tiers disclosed their framework
+
+| | |
+|---|---|
+| **Component** | Response headers, both tiers |
+| **Description** | `X-Powered-By: Express` and `X-Powered-By: Next.js` on every response, including to unauthenticated callers |
+| **Likelihood** | Certain - it was on every response |
+| **Impact** | Low - it names which CVE list to start from. It is reconnaissance, not a vulnerability |
+| **Severity** | **Low** |
+| **Mitigation** | **Implemented in F13:** `disable('x-powered-by')` on the Express instance, `poweredByHeader: false` in the Next config. Two further headers were added in the same pass: `X-Content-Type-Options: nosniff`, and `Referrer-Policy: strict-origin-when-cross-origin` so that expense and review ids travelling in paths are not sent to third-party origins in a `Referer` |
+| **Honest limit** | **This is hygiene, not defence.** An attacker who cares can fingerprint the stack from error shapes and header ordering regardless. It was removed because it gave something away for no benefit, and its absence is not claimed as a control |
+| **Automated verification** | None - verified by request |
+| **Manual verification** | `curl -D -` against both tiers, F13 |
+| **Status** | `MITIGATED` |
+
 ## Summary
 
 | Severity | Open | In progress | Mitigated | Accepted |
 |---|---|---|---|---|
 | Critical | - | - | R-01, R-02, R-03, R-05, R-10, R-21 | R-20 |
 | High | R-06, R-15 | - | R-04, R-07, R-08, R-12, R-14 | R-18, R-24, R-26 |
-| Medium | R-13 | - | R-16 | R-11, R-17, R-19, R-22, R-23, R-25, R-27, **R-35**, **R-38** |
-| Low | - | - | **R-29** | R-09, R-28, R-30, R-31, **R-33**, **R-36**, **R-37** |
+| Medium | R-13 | - | R-16, **R-39** | R-11, R-17, R-19, R-22, R-23, R-25, R-27, **R-35**, **R-38** |
+| Low | - | - | **R-29**, **R-40** | R-09, R-28, R-30, R-31, **R-33**, **R-36**, **R-37** |
 
 **Closed:** R-32, by F11. It is no longer an accepted limitation - the gap it
 described does not exist any more, and the evidence is named in its entry.
@@ -725,3 +770,4 @@ described does not exist any more, and the evidence is named in its entry.
 | 2026-11-21 | F08 completed | **R-32 and R-33 added and accepted**, both surfaced in the interface rather than only in this register. R-08 (API key handling) moved to `MITIGATED` with measured evidence: the plaintext appears nowhere in the table (F08-B20), no response carries a hash (F08-B22), the lifecycle is enforced inside the authentication WHERE clause (F08-B29 to B31, B36), and two concurrent rotations produce exactly one winner (F08-B34). R-01 re-verified on the one module that is deliberately NOT tenant-scoped: the company id is a selector applied after the role check, and a mismatched company/key pair mutates nothing (F08-B32, B38) |
 | 2026-11-21 | F11 completed | **R-32 CLOSED**, not re-accepted: manager provisioning exists, and F11-T22 proves it by signing in as an account created through the API and resolving a real review. **R-36 added and accepted** - the gap F11 deliberately did not close, which is password change and reset. R-01 re-verified on the two new routes: `role` and `companyId` are written by the server and absent from a `.strict()` schema, so a body claiming either is a 400 that creates nothing (F11-T10, F11-T11), and a provisioned manager can reach neither another company's data nor platform administration (F11-T16, F11-T16b) |
 | 2026-11-21 | F12 completed | The assessment's optional card webhook bonus. **R-35, R-37 and R-38 added and accepted**, each naming what it costs rather than what it avoids: a signing secret that must be reversible because HMAC needs key material, a backoff with no jitter at a scale that has no herd, and the absence of any way to find an event the provider never sent. R-01 re-verified on an entirely new authentication path: the company comes from the integration whose secret verified the signature, the body has no company field to ignore, and an attacker naming another company's delivery id is checked against a secret they do not hold (F12-T17, F12-T40 to T42, F12-T90). R-22 (the credential redactor) gained a new consumer - the worker's `lastError` is sanitised where it is written, because it is rendered in an administrator's browser (F12-T80) |
+| 2026-11-21 | F13 QA regression pass | An independent black-box pass over the merged build found **no functional defect** and six minor findings. Two were previously unrecorded security-hygiene gaps and are now entries of their own: **R-39 added and MITIGATED** (the dashboard could be framed by any origin - raised because R-18 accepted the absence of a CSP but never mentioned clickjacking, so nobody had weighed it) and **R-40 added and MITIGATED** (both tiers disclosed their framework). **R-11 was widened, not re-accepted**: its scope was understated as back-dating when the same hole opens on an ordinary concurrent burst, and F04-T26b now pins the invariants that hold on every interleaving. R-18 re-checked and left `ACCEPTED`, with an explicit note that the new `Content-Security-Policy` header carries only `frame-ancestors` and does nothing for script injection. R-19 re-tested and unchanged: 15 consecutive wrong passwords, no throttling |

@@ -70,6 +70,34 @@ cycle (79 checks, 0 failures) and, for the F11 and F12 rows, in their own
 suites and in the F13 demonstration (49 checks, 0 failures). The refusals are
 not inferred from decorators.
 
+### What the `Anon` column assumes
+
+**`401` assumes the caller sends `x-limaz-client`.** On a **state-changing**
+method without it, `CsrfGuard` runs before authentication resolves and answers
+first:
+
+```
+PATCH /v1/policy          (no credential, no x-limaz-client)
+HTTP/1.1 403 Forbidden
+{"statusCode":403,"error":"csrf_header_required", ...}
+```
+
+Send the header and the same request is `401`, as the column says.
+
+The ordering is deliberate and is the better of the two: the CSRF check is a
+property of the **request**, not of the caller, so it is settled before the
+credential path is touched at all. A request that could never be honoured is
+refused without a database lookup and without a bcrypt comparison.
+
+**`GET` is unaffected** and answers `401` with or without the header, because
+`CsrfGuard` only guards state-changing methods - a safe method cannot be the
+thing CSRF protects against.
+
+> Recorded in F13 after the QA regression pass raised it as MIN-05. The report
+> stated the 403 applied to every route; it applies to the state-changing ones
+> only, which is why the distinction is written out here rather than added as
+> a one-line footnote.
+
 ### The one row that does not fit the columns
 
 `POST /v1/webhooks/card-transactions` has no manager, admin or API-key

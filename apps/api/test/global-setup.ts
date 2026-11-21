@@ -21,6 +21,97 @@ import { acquireSuiteLock } from './suite-lock';
  * This only ever touches a database literally named `limaz_test`.
  */
 export default async function globalSetup(): Promise<void> {
+  try {
+    await setUpTestDatabase();
+  } catch (error) {
+    explain(error);
+    throw error;
+  }
+}
+
+/**
+ * Prints what Jest is about to throw away.
+ *
+ * Jest reports a failing `globalSetup` as:
+ *
+ *   Error: Jest: Got error running globalSetup - test/global-setup.ts,
+ *   reason: [AggregateError]
+ *
+ * and stops. That is the whole message. An `AggregateError` carries its real
+ * causes in `error.errors`, and Jest interpolates the error into a string,
+ * which for an AggregateError is just its constructor name - so the one piece
+ * of information that identifies the problem is discarded before anybody sees
+ * it.
+ *
+ * `node:pg` raises exactly this shape when a host resolves to several
+ * addresses and the connection fails on each: one `AggregateError` wrapping
+ * one `ECONNREFUSED` per address. The reader needs those addresses.
+ *
+ * Found by the F13 QA regression pass, MIN-06. The symptom there was ten
+ * minutes spent reconstructing this file by hand to find out what it had been
+ * trying to do.
+ */
+function explain(error: unknown): void {
+  const lines = ['', '[global-setup] Test database setup failed. The cause Jest omits:'];
+
+  const describe = (value: unknown, indent: string): void => {
+    if (value instanceof Error) {
+      lines.push(`${indent}${value.name}: ${value.message}`);
+
+      // `code` is where pg puts ECONNREFUSED and PostgreSQL puts its SQLSTATE,
+      // and it is usually the most actionable word in the whole failure.
+      const code = (value as { code?: unknown }).code;
+      if (typeof code === 'string') lines.push(`${indent}  code: ${code}`);
+
+      // `execFileSync` runs `prisma migrate deploy` with `stdio: 'pipe'`, so
+      // when a migration fails, the only description of WHY is in these two
+      // buffers hanging off the error. The message alone says "Command failed".
+      for (const stream of ['stdout', 'stderr'] as const) {
+        const captured = (value as unknown as Record<string, unknown>)[stream];
+        const text =
+          typeof captured === 'string'
+            ? captured
+            : Buffer.isBuffer(captured)
+              ? captured.toString('utf8')
+              : '';
+
+        for (const line of text.trim().split('\n')) {
+          if (line.trim()) lines.push(`${indent}  ${stream}: ${line.trimEnd()}`);
+        }
+      }
+
+      // AggregateError.errors, then the `cause` chain. Both are dropped by a
+      // plain string interpolation.
+      const nested = (value as { errors?: unknown }).errors;
+      if (Array.isArray(nested)) {
+        for (const inner of nested) describe(inner, `${indent}  `);
+      }
+      if (value.cause !== undefined) describe(value.cause, `${indent}  `);
+
+      return;
+    }
+
+    lines.push(`${indent}${String(value)}`);
+  };
+
+  describe(error, '  ');
+
+  // The URL is built from environment variables, so a wrong host or port is a
+  // common cause - and it is the one thing the message above may not name.
+  // `adminDatabaseUrl()` carries a password, so only the parts that help are
+  // printed. Never the whole URL.
+  try {
+    const url = new URL(adminDatabaseUrl());
+    lines.push(`  connecting to: ${url.hostname}:${url.port || 5432}`);
+  } catch {
+    lines.push('  connecting to: DATABASE_URL could not be parsed');
+  }
+
+  lines.push('');
+  process.stderr.write(`${lines.join('\n')}\n`);
+}
+
+async function setUpTestDatabase(): Promise<void> {
   // FIRST, before anything destructive. Two runs dropping and recreating this
   // database at the same moment break each other, and the symptom points
   // nowhere near the cause - see test/suite-lock.ts and AI_LOG 36.

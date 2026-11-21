@@ -1515,6 +1515,169 @@ cost of that would have been a guard that silently fails any chained
 verification from now on.
 
 
+## Defects found by the independent QA regression pass
+
+The project owner ran a black-box regression pass over the merged build -
+198 cases over 12 cycles, written against the requirements rather than against
+the implementation, sharing no code with this project's suites. It is recorded
+in [docs/testing/QA-regression-cycle.md](docs/testing/QA-regression-cycle.md).
+
+**It found no functional defect.** It found six minor ones. Four of those are
+worth writing down here, because two of them are things I had built and not
+noticed, one is a limitation I had described too narrowly since F04, and
+one is a report I had to check before acting on.
+
+The honest summary is that a second pair of eyes found what a thorough first
+pair had missed, and that none of it was in the parts I had worried about.
+
+### 63. Both tiers announced their framework, and no risk entry knew
+
+`X-Powered-By: Express` and `X-Powered-By: Next.js`, on every response,
+including to callers who had not authenticated.
+
+This is small. Removing it defends nothing - an attacker who cares can
+fingerprint the stack from error shapes and header ordering anyway, and I will
+not claim otherwise. What makes it worth an entry is the second half of the
+finding, which I had not seen coming:
+
+> It is not recorded anywhere in `docs/risks.md`, so this is an oversight
+> rather than an accepted trade-off.
+
+That is the part that stung, and it was correct. The whole posture of this
+repository is that limitations are named rather than hidden, and a limitation
+nobody wrote down is not an accepted trade-off - it is just a thing that is
+true. Two hardening gaps were in that state:
+
+| | |
+|---|---|
+| The framework headers | Now **R-40**, mitigated |
+| **Nothing stopped the dashboard being framed** | Now **R-39**, mitigated |
+
+The second is the one I would have wanted to find myself. R-18 accepts the
+absence of a Content-Security-Policy, and I had read that entry many times
+without noticing that it covers script injection and says nothing about
+clickjacking. The session cookie is `SameSite=Lax`, which blocks a cross-site
+POST but **not a framed top-level GET** - so the frame loads fully
+authenticated - and the application's approve and reject controls are exactly
+the one-click confirmations this attack is built for.
+
+**Fixed:** `frame-ancestors 'none'` and `X-Frame-Options: DENY`, plus
+`nosniff` and a `Referrer-Policy` so that expense ids travelling in paths are
+not handed to third-party origins.
+
+**And the thing I was careful NOT to do:** the web tier now sends a
+`Content-Security-Policy` header carrying one directive. It would be very easy
+to let R-18 read as though a CSP now exists. It does not. R-18 has an explicit
+line saying the header name is not the policy, because a register that
+overstates its own progress is worse than one that admits a gap.
+
+### 64. `%` and `_` in the expense search were wildcards
+
+`GET /v1/expenses?q=%25` returned every expense in the company. So did `q=_`.
+
+Prisma's `contains` becomes an `ILIKE` whose pattern embeds the term, and the
+term is a bound parameter - so this was never SQL injection, and the QA pass
+confirmed separately that an injection attempt is matched as the literal text
+it is. But **binding a value does not strip its meaning inside the pattern
+language**, and `%` and `_` are that language. A manager searching for a
+merchant like `Cafe 100%` was silently given a prefix search and no indication
+that anything had happened.
+
+I had tested that search *worked*. I had not tested what it did with a
+character that means something to the layer underneath. That is the actual
+lesson, and it generalises past this one query.
+
+**Fixed:** escape `\`, `%` and `_` before handing the term to `contains` -
+backslash first, so a literal one cannot consume the character after it.
+
+**The test is the part worth defending.** `F06-T14c` does not assert "fewer
+rows", because fewer rows is what a broken escape would also produce. It
+submits one merchant containing a literal `%` and another containing a literal
+`_`, and asserts each term finds **its own** row and **not the other's** -
+which is precisely what a wildcard cannot do. It also searches for a lone
+backslash, because the escape character escaping the service's own wrapping
+`%` would be a malformed pattern and a 500 from the driver.
+
+### 65. R-11 had been described too narrowly since F04
+
+The finding:
+
+> With `frequencyMaxCount = 3`, ten expenses submitted **simultaneously** whose
+> `spentAt` values differ by a few milliseconds auto-approve five to seven of
+> the ten, not three.
+
+**No code changed, and the report did not ask for any.** ADR-002 rejected
+retroactive re-evaluation deliberately and that decision stands. What was
+wrong was the description.
+
+R-11 was titled "a back-dated expense evades the frequency rule", and ADR-002's
+worked example is an hour apart. Both read like deliberate or late backfill -
+something unusual, done by somebody being clever. In fact the trigger is
+**arrival order differing from `spentAt` order**, and the commonest cause of
+that is not back-dating at all. It is ordinary concurrency: several requests in
+flight at once, timestamps milliseconds apart, granted the lock in an order
+nobody chose. That is the exact burst the frequency rule exists to catch.
+
+So the limitation was real, documented, accepted - and **named in a way that
+made it sound rarer than it is**. For a submission whose argument is that its
+limits are stated honestly, that is a defect in the honesty, not in the code.
+
+There is a second half, and it is uncomfortable: **my own concurrency test
+could never have surfaced this.** F04-T26 pins every `spentAt` to one instant,
+which is correct for what it tests - with a shared instant the lock produces
+exactly 3 approvals, deterministically, every run - but it means the suite was
+structurally blind to the skewed case.
+
+**What was added:** R-11 and ADR-002 widened, with the measured numbers. And
+`F04-T26b`, which submits a concurrent burst with skewed timestamps. It does
+**not** assert an approval count: that count depends on lock order, which is
+undetermined, so asserting a number would be flaky by construction. It asserts
+the two things true on every interleaving - the earliest `spentAt` always
+approves however late it arrives, and no expense's recorded count can exceed
+its rank in `spentAt` order. The second is the mechanism of R-11 written as an
+invariant.
+
+### 66. A finding I had to narrow before acting on it
+
+MIN-05 reported that the authorization matrix says `401` where the server
+answers `403`, because `CsrfGuard` runs before authentication:
+
+> For a request with **no credential and no `x-limaz-client` header** - the
+> plainest "unauthenticated caller" there is - the server answers 403.
+
+I went to reproduce it before changing the table, and it does not hold in
+general:
+
+```
+GET   /v1/expenses   (no credential, no header)  ->  401
+PATCH /v1/policy     (no credential, no header)  ->  403 csrf_header_required
+```
+
+`CsrfGuard` only guards **state-changing** methods, which is correct - a safe
+method is not the thing CSRF protects against. So the report's conclusion was
+right and its scope was too wide, and writing its wording into the document
+would have introduced a new inaccuracy while fixing an old one.
+
+The matrix now states the distinction explicitly, with both methods shown, and
+says where the correction came from. Recording this is not point-scoring: the
+instruction I was working under says not to take a report at face value, and
+this is the one place in the pass where that mattered.
+
+### What the pass did not find, and why that is the useful part
+
+No tenant leak. No 500 from any of the ninety-odd malformed inputs it threw.
+No idempotency hole, no double resolve, no webhook refusal path that leaked
+which check failed. Twelve distinct webhook refusals, one identical response
+body.
+
+Those are the four guarantees the assessment actually grades, they are the
+ones that had negative controls, and they are the ones an independent pass
+could not break. The six findings are all in the layer above: hygiene,
+wording, and a search filter. I would rather the distribution be this way
+round than the reverse, and it is worth saying plainly that it could have gone
+the other way.
+
+
 ## Running record
 
 | Date | Phase | Notes |
@@ -1544,3 +1707,4 @@ verification from now on.
 | 2026-11-21 | F11 implementation | Company manager provisioning, closing R-32. Two admin routes, no migration - the `User` model already carried everything. The administrator chooses the initial password, so the response carries no credential at all. Three defects recorded (51-53), two of them mine rather than the AI's. 30 new tests, 517/517 API passing, verified end to end in the browser: two managers created, a duplicate refused, and the new account signed in to its own workspace |
 | 2026-11-21 | F12 implementation | The assessment's optional card webhook bonus, built only after the core was tagged `v1.0.0-core`. HMAC-SHA256 over the raw request bytes, a per-company secret encrypted with AES-256-GCM rather than hashed (because HMAC needs the key material), a durable PostgreSQL inbox, and a `FOR UPDATE SKIP LOCKED` worker calling the SAME `ExpenseSubmissionService` a company backend reaches. Plus a sandbox simulator that signs server-side and delivers over real HTTP. Six defects recorded (54-59), one of them pre-existing since F03 and found by a webhook test: an oversized body was a 500 on every endpoint. 100 new tests, 617/617 API passing |
 | 2026-11-21 | F13 integration and delivery | Full demonstration through the application (49/49), full regression (647 tests), all four acceptance scripts, fresh installation from a clean checkout, final security audit, eight new Mermaid diagrams rendered before being committed, and the merge to `main` behind the `v1.0.0-core` tag. Three defects recorded (60-62), the last of which was the guard against overlapping test runs refusing a connection that was merely being reaped - a false failure in the project's own verification tooling, found in the final regression and fixed in both directions |
+| 2026-11-21 | QA regression pass and fixes | An independent black-box pass by the project owner - 198 cases over 12 cycles, written against the requirements and sharing no code with the project suites - found **no functional defect** and six minor ones. All six addressed: two header-hygiene fixes with new risk entries (**R-39**, **R-40**), LIKE-metacharacter escaping in the expense search with a negative control, R-11 widened from "back-dating" to any out-of-order arrival plus **F04-T26b**, a measured correction to the test-count claim (534 of 619 API tests touch PostgreSQL, not 617), the authorization matrix corrected with a narrower scope than the report gave it, and a `globalSetup` that prints the cause Jest discards. Four defects recorded (63-66). 649 tests passing |

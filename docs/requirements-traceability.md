@@ -107,7 +107,7 @@ however much code exists for it.
 
 | Requirement | Evidence | Status |
 |---|---|---|
-| `AI_LOG.md` with tools, prompts and a real mistake caught | [AI_LOG.md](../AI_LOG.md) - **62 recorded**, each with how it was noticed and what prevents recurrence | **DONE** |
+| `AI_LOG.md` with tools, prompts and a real mistake caught | [AI_LOG.md](../AI_LOG.md) - **66 recorded**, each with how it was noticed and what prevents recurrence | **DONE** |
 | Commit as you go | One commit per feature throughout, plus a `v1.0.0-core` tag before the optional bonus began | **DONE** |
 
 ## Section 10 - Card webhook
@@ -186,9 +186,9 @@ what is actually in the repository. Status vocabulary as above, plus
 | 4 | Per-company policy in the database, two companies seeded differently; amount limit, frequency (>3 in 60 min), blocked category; strongest decision wins; every rule that fired is listed | **PASS** | F04-T01 to T45; F09 end-to-end B1-B5b, including two rules firing and REJECT winning with both reasons returned |
 | 5 | A REVIEW opens a review; a manager approves or rejects, setting the final status; exactly one of two simultaneous resolves wins and the other is told clearly; reviewer is the logged-in manager; a record of who, when and how | **PASS** | F05-T01 to T44, F05-NC1; F07 two independent browser sessions; F09 M6-M10b and T22 |
 | 6 | Two UI areas - manager dashboard (expenses and decisions, open reviews, policy editing) and admin panel (all companies, create, API keys); every rule holds when the API is called directly | **PASS** | F06, F07, F08; every F09 refusal measured against the API with the UI bypassed |
-| 7 | Automated tests proving tenant isolation, idempotency including simultaneous requests, the concurrent resolve, and which decision wins | **PASS** | 647 automated tests; the four guarantees each have a **negative control** that fails when the mechanism is removed |
+| 7 | Automated tests proving tenant isolation, idempotency including simultaneous requests, the concurrent resolve, and which decision wins | **PASS** | 649 automated tests, 534 of them against real PostgreSQL; the four guarantees each have a **negative control** that fails when the mechanism is removed |
 | 8 | Eight decisions, answered in the README | **PASS** | README "The eight decisions", each backed by an ADR and named tests |
-| 9 | `AI_LOG.md` with tools, prompts, and at least one real AI mistake caught and fixed | **PASS** | 62 defects recorded, each with how it was noticed and what prevents recurrence |
+| 9 | `AI_LOG.md` with tools, prompts, and at least one real AI mistake caught and fixed | **PASS** | 66 defects recorded, each with how it was noticed and what prevents recurrence |
 | 10 | Card webhook intake | **PASS (optional bonus)** - built in F12, **after** the core was finished, verified and tagged `v1.0.0-core`, which is what "only once the core works" asks. Every clause mapped in the section above |
 | 11 | Private GitHub repo, `tarek-ragab-abdelal` invited, email by 24 Nov; `docker compose up` starts everything; a seed fills both companies, users, keys, policies and sample data; a README someone new can understand alone | **PASS**, except the email, which is the project owner's to send | Fresh-install verification from a clean clone in an isolated compose project; README rewritten in F10 |
 
@@ -199,7 +199,7 @@ its risk entry.
 
 | | Limitation | Risk |
 |---|---|---|
-| 1 | A back-dated expense can evade the frequency rule (forward-only evaluation) | R-11 |
+| 1 | Out-of-order arrival can evade the frequency rule (forward-only evaluation) - back-dating, and also an ordinary concurrent burst | R-11 |
 | 2 | No automated DOM/interaction test runner; frontend behaviour is browser-verified | R-23 |
 | 3 | Keyset pagination has no backward cursor; "Older" walks a client-held trail | R-28 |
 | 4 | Three high and nineteen moderate `npm audit` findings, all in dev tooling, measured unreachable | R-30 |
@@ -208,3 +208,5 @@ its risk entry.
 | 7 | API key issuance is not idempotent; a lost response leaves a key nobody holds | R-33 |
 | 8 | The `Origin` check refuses a different spelling of the same host | R-34 |
 | 9 | No load testing, and no screen-reader or WCAG conformance audit | F09 §12 |
+| 10 | No Content-Security-Policy with a `script-src` directive. The CSP header the web tier sends carries only `frame-ancestors`, so it does nothing for script injection | R-18 |
+| 11 | No Jest assertion on the response headers of R-39 and R-40; they are checked by `scripts/check-security-headers.sh` against a running build | R-39, R-40 |

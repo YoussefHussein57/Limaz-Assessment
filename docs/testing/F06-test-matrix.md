@@ -54,6 +54,7 @@ Totals after F06:
 | F06-T13c | Never-flagged expense | `review` is **null**, not an empty object; `reasons` empty | **PASS** |
 | F06-T14 | Search scoped to the caller | Nile and Delta both match "beans" and the two result sets are **disjoint** | **PASS** |
 | F06-T14b | Search fields | Merchant (case-insensitive), external reference, employee reference | **PASS** |
+| F06-T14c | **LIKE metacharacters are text, not pattern.** Regression for MIN-02, found by the F13 QA regression pass | `%` finds the merchant containing a literal `%` and **not** the one containing `_`, and the reverse; neither is the unfiltered list; a lone backslash is a clean empty result, not a 500 | **PASS** |
 | F06-T15 | Status filter | Exactly that status, count matching the fixtures | **PASS** |
 | F06-T15b | Decision filter is not the status filter | `decision=REVIEW` is strictly larger than `status=PENDING_REVIEW` | **PASS** |
 | F06-T16 | Combined filters | Narrow, not replace | **PASS** |

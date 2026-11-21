@@ -144,6 +144,107 @@ describe('F04 concurrent frequency evaluation', () => {
     // not determined, so asserting an identity would be flaky by design.
   }, 30_000);
 
+  // --- F04-T26b: the same burst with SKEWED spentAt ------------------------
+  //
+  // Added for MIN-03, found by the F13 QA regression pass.
+  //
+  // F04-T26 above pins every `spentAt` to one instant, correctly: it is
+  // testing the advisory lock, and a shared instant is what makes 3/2 the
+  // only serialisable answer. The consequence is that the suite could never
+  // surface what happens when arrival order and `spentAt` order DIVERGE -
+  // which, on ordinary concurrent traffic, they do, because several requests
+  // in flight at once carry slightly different timestamps and arrive in
+  // whatever order the lock grants.
+  //
+  // R-11 described this as a BACK-DATING risk, with a worked example an hour
+  // apart. That framing is too narrow. The same hole opens on a burst of
+  // genuinely live traffic, which is the exact traffic the frequency rule
+  // exists to catch. The risk entry has been widened to say so.
+  //
+  // WHAT IS ASSERTED, AND WHY ONLY THIS:
+  //
+  // The number of approvals varies run to run - the QA pass observed 3 to 7
+  // of ten - because it depends on lock order, which is undetermined.
+  // Asserting a number would be flaky by construction. So this asserts the
+  // two things true on EVERY interleaving, which together are the mechanism
+  // of R-11:
+  //
+  //   1. The earliest `spentAt` always approves, however late it arrives.
+  //      Nothing in its backward window can exist, because every sibling is
+  //      later. If it is granted the lock last, it is logically the last of
+  //      the burst and still auto-approves.
+  //   2. No expense's recorded count can exceed its RANK in `spentAt` order.
+  //      Under retroactive evaluation the last-arriving expense could count
+  //      them all; under forward-only evaluation it counts at most its rank.
+  //      That bound IS the limitation, stated as an invariant.
+  it('F04-T26b: a concurrent burst with skewed spentAt evaluates only backwards', async () => {
+    const base = Date.parse(SPENT_AT);
+
+    // Eight, not ten: `DB_POOL_MAX` is 10, and a burst that exactly fills the
+    // pool would queue inside it and run one at a time - the requests would
+    // never contend, and the test would pass without proving anything (R-10).
+    const size = 8;
+
+    // Milliseconds apart - the skew of a real burst, not a back-date. All
+    // eight sit inside company A's 60-minute window, so from the employee's
+    // point of view this is unambiguously eight expenses in one window.
+    const instants = Array.from({ length: size }, (_, i) =>
+      new Date(base + i).toISOString(),
+    );
+
+    barrier.arm(size, 20_000);
+
+    const responses = await Promise.all(
+      instants.map((spentAt, i) =>
+        submit({ externalId: `skew-${i}`, spentAt, employeeId: 'emp-race-skew' }),
+      ),
+    );
+
+    expect(responses.every((r) => r.status === 201)).toBe(true);
+
+    const stored = await prisma.expense.findMany({
+      where: { employeeId: 'emp-race-skew' },
+      include: { ruleHits: true },
+      orderBy: { spentAt: 'asc' },
+    });
+
+    // Nothing is lost and nothing is doubled, whatever the interleaving.
+    expect(stored).toHaveLength(size);
+
+    // (1) The earliest instant. Always APPROVE, never a frequency hit.
+    expect(stored[0]!.externalId).toBe('skew-0');
+    expect(stored[0]!.decision).toBe('APPROVE');
+    expect(stored[0]!.ruleHits.filter((h) => h.ruleCode === 'FREQUENCY')).toHaveLength(0);
+
+    // (2) Rank bounds the count, for every row.
+    stored.forEach((expense, index) => {
+      const hit = expense.ruleHits.find((h) => h.ruleCode === 'FREQUENCY');
+
+      if (hit) {
+        const { countIncludingCurrent } = hit.detail as { countIncludingCurrent: number };
+
+        // `index + 1` is this expense's position in spentAt order. A count
+        // above it would mean the evaluator had seen a LATER expense.
+        expect(countIncludingCurrent).toBeLessThanOrEqual(index + 1);
+        expect(countIncludingCurrent).toBeGreaterThan(3);
+      }
+    });
+
+    // The first three in lock order can never see three predecessors, so at
+    // least three approve on every interleaving. The real number is usually
+    // higher - that is the limitation, and it is why this is a lower bound
+    // rather than an equality.
+    const approvals = stored.filter((e) => e.decision === 'APPROVE').length;
+    expect(approvals).toBeGreaterThanOrEqual(3);
+
+    // And the policy that judged them was the real one, unchanged.
+    expect(
+      stored.every(
+        (e) => (e.policySnapshot as { frequencyMaxCount: number }).frequencyMaxCount === 3,
+      ),
+    ).toBe(true);
+  }, 40_000);
+
   // --- F04-T27 / T28: F03 guarantees still hold with the real evaluator ----
   it('F04-T27: simultaneous identical retries persist one expense', async () => {
     barrier.arm(5, 15_000);

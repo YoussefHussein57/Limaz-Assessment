@@ -138,11 +138,15 @@ function buildWhere(companyId: string, query: ListExpensesDto): Prisma.ExpenseWh
     // actually type. This is content matching and writes nothing; the F03
     // rule that identifiers are compared EXACTLY governs submission, where
     // merging two client identities would be a correctness failure.
+    //
+    // Escaped first, so the term is matched as TEXT rather than as a pattern.
+    const term = escapeLikePattern(query.q);
+
     and.push({
       OR: [
-        { merchant: { contains: query.q, mode: 'insensitive' } },
-        { externalId: { contains: query.q, mode: 'insensitive' } },
-        { employeeId: { contains: query.q, mode: 'insensitive' } },
+        { merchant: { contains: term, mode: 'insensitive' } },
+        { externalId: { contains: term, mode: 'insensitive' } },
+        { employeeId: { contains: term, mode: 'insensitive' } },
       ],
     });
   }
@@ -158,6 +162,31 @@ function buildWhere(companyId: string, query: ListExpensesDto): Prisma.ExpenseWh
     ...(query.category ? { category: query.category } : {}),
     ...(and.length > 0 ? { AND: and } : {}),
   };
+}
+
+/**
+ * The search term, with LIKE metacharacters stripped of their pattern meaning.
+ *
+ * Prisma renders `contains` as an `ILIKE` against a bound parameter, with the
+ * value wrapped in `%` signs. The value is parameterised - this was never SQL
+ * injection, and a query full of quotes and semicolons is matched as the
+ * literal text it is.
+ * But parameterisation does not strip a character of its meaning INSIDE the
+ * pattern language, and `%` and `_` are that language.
+ *
+ * So a manager searching for `Cafe 100%` was silently given a prefix search,
+ * and a bare `_` matched every row in the company. Wrong results rather than
+ * a leak - the tenant predicate is a separate clause and still applies - but
+ * wrong results that look right, which is the worse failure of the two.
+ *
+ * PostgreSQL LIKE uses backslash as its escape character by default, so
+ * escaping the backslash FIRST (before the characters it will escape) is what
+ * keeps a literal one from consuming the character after it.
+ *
+ * Found by the F13 QA regression pass, MIN-02.
+ */
+function escapeLikePattern(term: string): string {
+  return term.replace(/[\\%_]/gu, (character) => `\\${character}`);
 }
 
 /**

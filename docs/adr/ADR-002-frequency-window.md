@@ -75,12 +75,25 @@ Late data is therefore not discarded. It is simply never applied retroactively.
 
 ## Known limitation, risk R-11
 
-A back-dated expense can receive APPROVE even though it is logically the fourth
-expense in its own window, because forward-only evaluation never looks ahead.
-The `spentAt` bounds reduce the blast radius; they do not close the hole.
+An expense whose `spentAt` is earlier than one already decided can receive
+APPROVE even though it is logically the fourth expense in its own window,
+because forward-only evaluation never looks ahead. The `spentAt` bounds reduce
+the blast radius; they do not close the hole.
 
 This is a deliberate, documented trade-off. The risk register records it as
 **accepted**, not **mitigated**.
+
+> **Scope correction, F13.** This section originally said "a back-dated
+> expense", and the worked example below is an hour apart, which reads like
+> deliberate or late backfill. That framing understates it. The trigger is not
+> back-dating; it is **arrival order differing from `spentAt` order**, and the
+> commonest cause of that is ordinary concurrency - several requests in flight
+> at once, carrying timestamps milliseconds apart, granted the lock in an
+> order nobody chose. That is precisely the burst the frequency rule exists to
+> catch. The QA regression pass of 21 November 2026 measured a concurrent
+> burst of ten against a limit of three and saw three to seven auto-approve,
+> varying by run. F04-T26b now pins the two invariants that hold on every
+> interleaving. See R-11 in the risk register for the widened entry.
 
 ## Test strategy
 

@@ -262,6 +262,77 @@ describe('F06 expense access', () => {
     ).toBe(true);
   });
 
+  // --- F06-T14c: LIKE metacharacters are text, not pattern ----------------
+  //
+  // Regression for MIN-02, found by the F13 QA regression pass.
+  //
+  // `contains` becomes an `ILIKE` whose pattern embeds the search term. The
+  // term is a bound parameter - this was never SQL injection - but binding a
+  // value does not strip its meaning INSIDE the pattern language. So `%` and
+  // `_` kept their wildcard meaning, and a search for either returned every
+  // expense in the company while looking like a normal result set.
+  //
+  // The assertion that matters is not "fewer rows". It is that each term
+  // matches the row that literally contains that character AND NOT the row
+  // that does not - which a wildcard, by definition, cannot do.
+  it('F06-T14c: % and _ in a search term match literally, not as wildcards', async () => {
+    const stamp = Date.now();
+
+    const submit = (merchant: string, suffix: string) =>
+      request(app.getHttpServer())
+        .post('/v1/expenses')
+        .set('x-api-key', nileKey)
+        .send({
+          externalId: `f06-like-${stamp}-${suffix}`,
+          employeeId: 'emp-like',
+          amount: 1_000,
+          currency: 'SAR',
+          merchant,
+          category: 'OFFICE',
+          spentAt: new Date().toISOString(),
+        })
+        .expect(201);
+
+    // One merchant carries a literal percent, the other a literal underscore,
+    // and NEITHER carries the other's character.
+    const percent = await submit(`Percent ${stamp}% Co`, 'percent');
+    const underscore = await submit(`Under_score ${stamp} Co`, 'underscore');
+
+    try {
+      const total = await get('/v1/expenses?limit=100', nileCookie).expect(200);
+      expect(total.body.items.length).toBeGreaterThan(2);
+
+      const byPercent = await get('/v1/expenses?limit=100&q=%25', nileCookie).expect(200);
+      const byUnderscore = await get('/v1/expenses?limit=100&q=_', nileCookie).expect(200);
+
+      const ids = (response: { body: { items: { id: string }[] } }) =>
+        response.body.items.map((item) => item.id);
+
+      // Each term finds its own row and not the other's. Before the fix both
+      // searches returned the whole company, so both of these lists would
+      // have contained both ids - and the `toContain` half would still pass.
+      expect(ids(byPercent)).toContain(percent.body.id);
+      expect(ids(byPercent)).not.toContain(underscore.body.id);
+
+      expect(ids(byUnderscore)).toContain(underscore.body.id);
+      expect(ids(byUnderscore)).not.toContain(percent.body.id);
+
+      // And neither is the unfiltered list wearing a filter's clothes.
+      expect(byPercent.body.items.length).toBeLessThan(total.body.items.length);
+      expect(byUnderscore.body.items.length).toBeLessThan(total.body.items.length);
+
+      // A lone backslash is the escape character itself. It must not escape
+      // the `%` the service wraps the term in, which would be a malformed
+      // pattern and a 500 from the driver.
+      const backslash = await get('/v1/expenses?limit=100&q=%5C', nileCookie).expect(200);
+      expect(backslash.body.items).toEqual([]);
+    } finally {
+      await prisma.expense.deleteMany({
+        where: { id: { in: [percent.body.id, underscore.body.id] } },
+      });
+    }
+  });
+
   it('F06-T15: the status filter returns exactly that status', async () => {
     const response = await get('/v1/expenses?status=PENDING_REVIEW', nileCookie).expect(200);
 

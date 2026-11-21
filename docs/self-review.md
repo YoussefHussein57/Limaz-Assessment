@@ -77,7 +77,7 @@ real behaviour a reviewer can find.
 
 ### 4. Test quality — 13 / 15
 
-647 tests, 617 against real PostgreSQL with no mocked repositories;
+649 tests, 534 against real PostgreSQL with no mocked repositories;
 concurrency tests that genuinely overlap; four negative controls; assertions
 on database state rather than only on status codes.
 
@@ -96,7 +96,7 @@ laptop smoke test labelled as a sanity check.
 
 A README written for somebody who has never seen the project, eleven ADRs, a
 requirements traceability matrix, a 37-entry risk register where every status
-names its evidence, and an AI log of 62 defects - each with how it was noticed
+names its evidence, and an AI log of 66 defects - each with how it was noticed
 and what stops it recurring, including the ones that were embarrassing.
 
 **−1:** there is a lot of it, and the webhook bonus made it longer. A reviewer
@@ -141,6 +141,23 @@ An interviewer who expects automated frontend tests as table stakes would land
 lower - somewhere in the high eighties. One who weights proven correctness
 under concurrency would land higher. The spread is the honest answer.
 
+### The score did not move after the QA regression pass, and that is a claim
+
+An independent black-box pass over the merged build (198 cases, 12 cycles,
+sharing no code with these suites) found **no functional defect** and six
+minor ones. All six are fixed or recorded. The total stays at 93 because none
+of them was a point: two were security hygiene, two were documentation
+accuracy, one was a search filter and one was developer experience.
+
+What it **did** change is the confidence behind the sections above. The four
+guarantees the assessment grades - tenant isolation, idempotency, the
+frequency rule, concurrent resolution - were attacked by somebody who had not
+read the implementation, and they held. That is worth more here than a point.
+
+It also found two gaps that were in neither the risk register nor the F13
+security audit (now R-39 and R-40), which is a fair measure of how far a
+self-audit reaches on its own.
+
 ---
 
 ## Strongest parts
@@ -151,7 +168,7 @@ under concurrency would land higher. The spread is the honest answer.
 2. **Tenant isolation measured rather than asserted.** The authorization
    matrix was executed against the running stack with the UI bypassed, and the
    RSC payload was read directly for both role directions.
-3. **The AI log.** Sixty-two defects with attribution of how each was noticed
+3. **The AI log.** Sixty-six defects with attribution of how each was noticed
    - including a live API key I wrote into a screenshot during my own
    verification, an acceptance script that had been failing for six features
    while reports quoted the two that passed, and an oversized request body
@@ -173,6 +190,12 @@ under concurrency would land higher. The spread is the honest answer.
    reconciliation needs a provider API this integration does not have - but it
    is still a gap.
 5. No audit log for administrative actions.
+6. **A self-audit missed two hardening gaps.** The QA pass found that nothing
+   stopped the dashboard being framed, and that both tiers named their
+   framework on every response. Both are now fixed and recorded (R-39, R-40),
+   but neither was in the risk register beforehand, which is the part that
+   matters: they were not accepted trade-offs, they were things nobody had
+   looked at.
 6. The webhook worker runs inside the API process. Separating it needs no code
    change, but it has not been done or demonstrated (R-37).
 

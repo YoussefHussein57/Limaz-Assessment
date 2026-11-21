@@ -100,7 +100,7 @@ If the invitation needs re-sending:
 > policies, their users, API keys and sample expenses. The web application is
 > at http://localhost:3000 and the credentials are in the README.
 >
-> There are 647 automated tests, 617 of them against real PostgreSQL rather
+> There are 649 automated tests, 534 of them against real PostgreSQL rather
 > than mocks - including four negative controls that remove a mechanism and
 > show the failure it was preventing reappear. The README covers how to run
 > and test it, how it is put together, my answers to the eight decisions, how

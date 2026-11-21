@@ -132,7 +132,33 @@ What makes it safe to keep:
 
 ---
 
-## 9. What is NOT claimed
+## 9. Response headers, after the QA regression pass
+
+Added in F13 after an independent black-box pass found two hygiene gaps that
+**were not in the risk register at all** - which is the part worth admitting.
+This repository argues that its limitations are named rather than hidden, and
+a gap nobody wrote down is not an accepted trade-off.
+
+| Header | Where | What it is for | What it is NOT |
+|---|---|---|---|
+| `Content-Security-Policy: frame-ancestors 'none'` | web | The dashboard cannot be framed, so its one-click approve and reject controls cannot be clickjacked (R-39) | **Not a Content-Security-Policy.** One directive. It governs who may frame the page, not what may execute inside it. R-18 is untouched |
+| `X-Frame-Options: DENY` | web | The same thing, for browsers that read only this | Redundant on purpose. They agree, because the application is never framed by anything |
+| `X-Content-Type-Options: nosniff` | web | A response is not sniffed into a type it was not sent as | |
+| `Referrer-Policy: strict-origin-when-cross-origin` | web | Expense, review and company ids travel in paths. Without it a full URL carrying one goes to any third-party origin as a `Referer` | |
+| No `X-Powered-By` | **both** | It named the framework whose CVE list to start from, on every response, to unauthenticated callers too (R-40) | **Hygiene, not defence.** The stack is still fingerprintable from error shapes and header ordering. Removed because it gave something away for nothing, not because it stops anybody |
+
+**Why clickjacking was the one that mattered.** The session cookie is
+`SameSite=Lax`. That blocks a cross-site POST, but **not a framed top-level
+GET** - the frame loads fully authenticated. R-18 accepted the absence of a
+CSP and said nothing about framing, so the gap sat between two entries.
+
+**Verified by response, not by suite.** These headers come from the Next.js
+server and the Express adapter, not from application code a Jest suite can
+reach, so `scripts/check-security-headers.sh` checks them against a running
+build - **6 of 6 passing** after a rebuild. It needs a rebuilt stack, so it is
+step 5 of the verification order rather than part of `npm test`.
+
+## 10. What is NOT claimed
 
 - **No rate limiting** on the webhook endpoint. A valid signature is required,
   so an attacker cannot force work beyond a signature check - but a company
@@ -145,3 +171,12 @@ What makes it safe to keep:
   leaves no trace (R-38).
 - **No penetration test**, no dependency upgrade for the 22 `npm audit`
   findings analysed as unreachable (R-30), and no WCAG conformance claim.
+- **No Jest assertion on the response headers above.** The check script is a
+  separate step that needs a rebuilt stack, so a future change to
+  `next.config.ts` could remove them and `npm test` would stay green.
+- **An independent pass found gaps this audit had not.** The QA regression
+  cycle of 21 November 2026 found no functional defect, but it did find two
+  hardening items that were absent from both this document and the risk
+  register, and one limitation (R-11) described too narrowly since F04. That
+  is evidence about how far a self-audit reaches, and it is the reason this
+  section exists at all.

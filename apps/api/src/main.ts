@@ -23,6 +23,18 @@ async function bootstrap(): Promise<void> {
   // limit that already applies. Nothing but the webhook route reads it.
   const app = await NestFactory.create(AppModule, { rawBody: true });
 
+  // Express announces itself on every response with `X-Powered-By: Express`.
+  //
+  // It defends nothing to remove it - an attacker who cares can fingerprint
+  // the stack from error shapes and header ordering anyway, and this is not
+  // claimed as a security control. It is removed because it is free
+  // reconnaissance given away for no benefit: it names the framework whose
+  // CVE list to start from, on every single response, including to callers
+  // who have not authenticated.
+  //
+  // Found by the F13 QA regression pass, MIN-01.
+  app.getHttpAdapter().getInstance().disable('x-powered-by');
+
   // There is deliberately NO app.enableCors().
   //
   // CORS is not a lock the server applies; it is permission the server grants.

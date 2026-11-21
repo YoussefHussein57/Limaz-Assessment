@@ -74,6 +74,22 @@ docker compose exec db psql -U limaz -d postgres \
 
 The error message prints the exact pid, so you can terminate just that one.
 
+### If `globalSetup` fails for some other reason
+
+Jest reports it as `reason: [AggregateError]` and prints nothing else - the
+causes are inside the error and a plain string interpolation drops them.
+`global-setup.ts` now prints them itself before rethrowing: every nested
+cause, the `code` (`ECONNREFUSED`, or a PostgreSQL SQLSTATE), the captured
+output of a failed `prisma migrate deploy`, and the host and port it was
+dialling. Look for:
+
+```
+[global-setup] Test database setup failed. The cause Jest omits:
+```
+
+Added in F13 after the QA regression pass spent ten minutes reconstructing
+this file by hand to find out what it had been trying to do (MIN-06).
+
 ---
 
 ## Safe full verification, in order
@@ -97,17 +113,22 @@ bash scripts/verify-f01.sh
 bash scripts/verify-f02.sh
 bash scripts/verify-f02-1.sh
 
-# 5. The fresh install, LAST. It clones the repository at HEAD and runs it
+# 5. Response headers. Needs a REBUILT stack, because they come from the
+#    Next.js server and the Express adapter rather than from application
+#    code - which is why no Jest suite asserts them (R-39, R-40).
+bash scripts/check-security-headers.sh
+
+# 6. The fresh install, LAST. It clones the repository at HEAD and runs it
 #    in an isolated compose project on its own ports, so it is the only step
 #    that does not touch the development stack - but it is still one at a
 #    time, because two copies share the compose project name.
 bash scripts/verify-fresh-install.sh
 ```
 
-Do **not** background any of steps 3 to 5, and do not run two of them in
+Do **not** background any of steps 3 to 6, and do not run two of them in
 separate terminals.
 
-### Why step 5 is isolated, and why that is not enough on its own
+### Why step 6 is isolated, and why that is not enough on its own
 
 `verify-fresh-install.sh` uses `-p limaz-fresh` and ports 3100/3101/5533, so
 it never touches the development volume and can run beside a dev stack. What

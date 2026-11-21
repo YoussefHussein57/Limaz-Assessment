@@ -32,7 +32,7 @@ identifier belonging to another company.
 | **Manager dashboard** | Company totals by status from one aggregate query; a searchable, filterable, keyset-paginated expense list; an expense detail carrying every reason with its evidence and the policy snapshot it was judged against; the review queue; and the four policy settings, editable |
 | **Admin panel** | Every company, creating one (company + policy + first API key in a single transaction), **its manager accounts**, and the full key lifecycle: issue, rotate with a 24-hour grace window, revoke immediately |
 | **Card webhook** *(the optional bonus)* | `POST /v1/webhooks/card-transactions`. HMAC-SHA256 over the **raw** request bytes with a per-company secret, the company derived from the signature rather than the payload, a durable PostgreSQL inbox, and asynchronous processing through the **same** policy engine. Plus a sandbox simulator that signs server-side and delivers over real HTTP |
-| **Tests** | **647** automated tests, 617 of them against real PostgreSQL, including four **negative controls** that fail when the mechanism they protect is removed |
+| **Tests** | **649** automated tests, **534** of them against real PostgreSQL, including four **negative controls** that fail when the mechanism they protect is removed |
 
 The optional card webhook (section 10) was built **after** the mandatory core
 was finished, verified and tagged `v1.0.0-core` - which is what the brief asks:
@@ -1160,8 +1160,9 @@ place all ten in one window and fire the rule on behaviour that never happened.
 
 *Trade-off:* `spentAt` is client-supplied, so it is bounded (5 minutes future,
 90 days past) rather than trusted. *Limitation:* decisions are never
-recalculated and the window looks only backwards, so a back-dated expense can
-evade the rule - risk R-11, with a worked example above.
+recalculated and the window looks only backwards, so an expense that ARRIVES
+after one with a later `spentAt` can evade the rule - by back-dating, and also
+on an ordinary concurrent burst - risk R-11, with a worked example above.
 [ADR-002](docs/adr/ADR-002-frequency-window.md)
 
 **3. A company asks for another company's record by id. What do you answer, and
@@ -1292,6 +1293,7 @@ the session (risk R-18).
 | Database constraints | Unique indexes, CHECK constraints and a composite foreign key make several invalid states unstorable | They do not validate business input - that is Zod, at the boundary |
 | Error sanitisation | 5xx bodies carry no internals; the redactor scrubs credentials by header name, key name and pattern before any log write | The redactor is a **backstop with named gaps** (risk R-22). Credentials travel in headers, never in URLs |
 | Frontend cache | `QueryProvider` is keyed by `user.id`, so a different user mounts a new client with no cache to read | |
+| Response headers | `frame-ancestors 'none'` and `X-Frame-Options: DENY` on the web tier, so the dashboard cannot be framed and its one-click approvals cannot be clickjacked (R-39); `nosniff`; `Referrer-Policy` so expense ids in paths are not sent to third-party origins; no `X-Powered-By` on either tier (R-40) | **There is still no Content-Security-Policy.** The CSP header that is sent carries one directive, `frame-ancestors`. It governs who may frame the page, not what may execute inside it, and does nothing for risk R-18 |
 | Server Component authorization | Each page checks the role **before** fetching, so an unauthorized page contributes nothing to the RSC payload | A layout that hides its children does **not** stop them rendering - that mistake and its fix are AI_LOG 44 and 47 |
 
 Things this project does **not** claim: the proxy is not SQL-injection
@@ -1337,13 +1339,13 @@ npm test
 ```
 
 ```
-@limaz/api   Test Suites: 39 passed, 39 total      Tests: 617 passed
+@limaz/api   Test Suites: 39 passed, 39 total      Tests: 619 passed
 @limaz/web   Test Suites:  2 passed,  2 total      Tests:  30 passed
 ```
 
 | Command | What it covers |
 |---|---|
-| `npm test --workspace @limaz/api` | 617 tests against **real PostgreSQL** |
+| `npm test --workspace @limaz/api` | 619 tests, **534** of them against real PostgreSQL |
 | `npm test --workspace @limaz/web` | 30 tests over the two pure frontend modules |
 | `TZ=America/New_York npm test --workspace @limaz/web` | proves the display timezone is fixed rather than inherited |
 | `npm run lint`, `npm run typecheck`, `npm run build` | static gates |
@@ -1351,6 +1353,7 @@ npm test
 | `node scripts/check-contrast.mjs` | prints all 15 design-token contrast ratios |
 | `bash scripts/verify-f00.sh` … `verify-f02-1.sh` | acceptance against a **rebuilt** Docker stack |
 | `node scripts/send-card-webhook.mjs` | signs and delivers a real webhook, independently of this codebase |
+| `bash scripts/check-security-headers.sh` | the response headers of R-39 and R-40, against a **rebuilt** stack. Not part of `npm test`: they come from the servers, not from code a suite can reach |
 
 ### The safe order
 
@@ -1383,7 +1386,7 @@ volume, so do not run them with data you want to keep.
 
 | Kind | Where | Note |
 |---|---|---|
-| Unit | beside the code | pure functions: rules, canonicalisation, money, key generation |
+| Unit | beside the code | pure functions: rules, canonicalisation, money, key generation. **85 of the 619**, in six files that open no connection: `policy-rules`, `canonical-payload`, `webhook-crypto`, `env`, `api-key-generator`, `health.unit` |
 | Integration / e2e | `apps/api/test/` | real PostgreSQL, real HTTP, **no mocked repositories** - a mock cannot raise `23505`, abort a transaction or serialise on an advisory lock |
 | Concurrency | `concurrency`, `policy-concurrency`, `api-key-lifecycle` | genuinely overlapping requests, bounded by the connection pool rather than by the test runner |
 | **Negative controls** | `negative-control`, `review-negative-control`, `dashboard-negative-control` | remove the mechanism, watch the failure appear. They refuse to run unless `current_database()` is `limaz_test` |
@@ -1393,6 +1396,13 @@ volume, so do not run them with data you want to keep.
 **Component *behaviour* has no automated runner** (risk R-23). Nothing in this
 repository claims an automated DOM test that does not exist: browser-verified
 rows say so, every time.
+
+The split above is stated because it is checkable. An earlier version of this
+README said "617 of them against real PostgreSQL", which counted the whole API
+suite - including the six files listed above, which say in their own headers
+that they are unit tests. The QA regression pass caught it (MIN-04). In a
+submission whose argument is that its claims can be verified, a number a
+reviewer can disprove in one command costs more than the ones it over-claimed.
 
 ---
 
@@ -1477,7 +1487,7 @@ None is a mandatory requirement of the assessment.
 
 | | Limitation | Why it exists | Impact | What would fix it |
 |---|---|---|---|---|
-| R-11 | A back-dated expense can evade the frequency rule | Decisions are never recalculated; recalculating would change answers already given to a client | A gap in the rule, not a wrong answer | Sliding sub-window evaluation (ADR-002) |
+| R-11 | Out-of-order arrival can evade the frequency rule - including an ordinary concurrent burst, not only a back-date | Evaluation looks only backwards from the submitted `spentAt`, and decisions are never recalculated; recalculating would change answers already given to a client | A gap in the rule, not a wrong answer. Measured: a burst of ten against a limit of three auto-approved three to seven | Sliding sub-window evaluation (ADR-002) |
 | R-23 | No automated DOM/interaction tests | None of the four core guarantees is provable in a browser; the time went to tests that do prove them | Frontend regressions need a human | A Playwright suite |
 | R-28 | Keyset pagination has no backward cursor | A true backward keyset needs a second ordering and a second query path | "Older" walks a client-held trail; a reload loses it | Bidirectional cursors |
 | R-30 | 3 high + 19 moderate `npm audit` findings | All in dev tooling. The vulnerable `effect` symbol is not even present in the package that imports it; npm would not apply an override, and its only offered fix is a major downgrade | None measured on any request path | A Prisma release off the pinned `effect` |
@@ -1496,8 +1506,9 @@ None is a mandatory requirement of the assessment.
    of the webhook bonus that is explained rather than built - because it needs
    a provider API this integration does not have.
 2. **Close R-11** with sliding sub-window evaluation.
-3. **Rate limiting** on login and per API key, plus a Content-Security-Policy
-   (risks R-19, R-18).
+3. **Rate limiting** on login and per API key, plus a **full**
+   Content-Security-Policy with a `script-src` directive - the one sent today
+   carries only `frame-ancestors` (risks R-19, R-18).
 4. **A browser end-to-end suite** to close R-23.
 5. **Load testing** the frequency path to find where lock contention actually
    begins - and only then consider a counter outside PostgreSQL.
@@ -1579,7 +1590,7 @@ apps/
     src/webhooks/         Card webhook intake: HMAC, the event inbox, the worker
     src/simulator/        The sandbox simulator and the event history (admin only)
     prisma/               Schema, migrations, the idempotent seed
-    test/                 617 tests against real PostgreSQL
+    test/                 619 tests, 534 of them against real PostgreSQL
   web/                    Next.js App Router
     app/api/[...path]/    The same-origin proxy
     app/(app)/dashboard/  Overview, expenses, reviews, policy
@@ -1593,8 +1604,9 @@ docs/
   interview/              Five defence questions per feature
   risks.md                37 risks, each with the evidence behind its status
   requirements-traceability.md   Every assessment requirement mapped to evidence
-scripts/                  Acceptance scripts, the contrast checker, the webhook sender
-AI_LOG.md                 Tools, prompts, and 62 recorded defects
+scripts/                  Acceptance scripts, the contrast checker, the webhook
+                          sender, the security-header check
+AI_LOG.md                 Tools, prompts, and 66 recorded defects
 ```
 
 ### Build history
@@ -1626,7 +1638,7 @@ Each feature was implemented, tested and reviewed before the next began.
 
 Everything in this repository was written with Claude Code, and everything in
 it is mine to defend. [`AI_LOG.md`](AI_LOG.md) records the tools, the shape of
-the prompts, and **62 defects** - each with how it was noticed, what fixed it,
+the prompts, and **66 defects** - each with how it was noticed, what fixed it,
 and what stops it coming back. They include a floating-point bug I asserted in
 a test that does not actually happen, an advisory lock that hid the very
 mechanism its tests claimed to prove, a layout that leaked an admin heading
