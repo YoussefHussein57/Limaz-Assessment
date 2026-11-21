@@ -221,18 +221,34 @@ restarting.
 
 ### Creating a manager for a company you created yourself
 
-Creating a company makes its policy and first API key but **not** a manager
-(assumption A5, risk R-32): the application would have to invent a password or
-grow an invitation subsystem, and neither belongs here. For end-to-end testing,
-provision one yourself - **development only**:
+**In the application.** Open the company in the admin workspace and use the
+**Managers** panel: *Add manager*, then a name, an email and an initial
+password of at least 12 characters.
+
+Creating a company still makes its policy and first API key but **not** a
+manager (assumption A5) - a company's first manager is a separate, deliberate
+act rather than a side effect. What changed in F11 is that it is now an act
+you can perform, instead of a database row you had to write yourself.
+
+Three things the panel does not pretend to do, and says so:
+
+- **nothing is emailed.** You choose the initial password and hand it over
+  yourself. The API never returns it.
+- **there is no reset.** A manager cannot change their password in the
+  application, and neither can you (risk R-36).
+- **accounts cannot be removed.** A resolved review names its reviewer, and
+  `onDelete: Restrict` means the database refuses to orphan that record.
+
+The same thing over the API, if you prefer:
 
 ```bash
-docker compose exec -T api node -e "console.log(require('bcryptjs').hashSync(process.argv[1],10))" 'ChooseYourOwnPassword!'
+curl -s -X POST http://localhost:3001/v1/admin/companies/<companyId>/managers \
+  -H 'content-type: application/json' -H 'x-limaz-client: 1' \
+  -b cookies.txt \
+  -d '{"displayName":"Test Manager","email":"you@example.test","password":"ChooseYourOwn!2026"}'
 ```
 
-```bash
-docker compose exec -T db psql -U limaz -d limaz -c "INSERT INTO users (id,\"companyId\",email,\"displayName\",role,\"passwordHash\",\"createdAt\",\"updatedAt\") SELECT gen_random_uuid(), id, 'you@example.test', 'Test Manager', 'MANAGER', '<paste the hash>', now(), now() FROM companies WHERE name = 'Your Company';"
-```
+`201` with the new manager's id, email and role - and **no credential**.
 
 ---
 
@@ -905,7 +921,7 @@ None is a mandatory requirement of the assessment.
 | R-28 | Keyset pagination has no backward cursor | A true backward keyset needs a second ordering and a second query path | "Older" walks a client-held trail; a reload loses it | Bidirectional cursors |
 | R-30 | 3 high + 19 moderate `npm audit` findings | All in dev tooling. The vulnerable `effect` symbol is not even present in the package that imports it; npm would not apply an override, and its only offered fix is a major downgrade | None measured on any request path | A Prisma release off the pinned `effect` |
 | R-31 | Concurrent policy edits are last-write-wins | The assessment requires conflict handling for **reviews**, not for policy edits; a version column would be machinery for a race nobody has | A silently reverted setting | An `updatedAt` precondition |
-| R-32 | A new company has no manager | The alternatives are an invented password or an invitation subsystem | Flagged expenses wait | A provisioning endpoint once credential delivery exists |
+| R-36 | A manager’s password cannot be changed or reset in the application | A reset path needs email delivery, or a route that overwrites a credential. Neither is in scope | An account keeps the password it was created with | Administrator-set replacement, or an invitation flow |
 | R-33 | API key issuance is not idempotent | The caller is a human in a browser, and the orphan key is visible in the list | A credential nobody tracks | An idempotency key |
 | R-34 | The `Origin` check refuses a different spelling of the same host | Exact comparison is what makes the layer worth having | A confusing `403` | Documented in the quick start |
 | - | No load testing; no screen-reader or WCAG conformance audit | Out of scope; stated rather than implied | Claims are limited accordingly | |

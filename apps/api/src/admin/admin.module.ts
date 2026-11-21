@@ -3,9 +3,10 @@ import { PrismaModule } from '../prisma/prisma.module';
 import { AdminController } from './admin.controller';
 import { ApiKeyAdminService } from './api-key-admin.service';
 import { CompanyAdminService } from './company-admin.service';
+import { ManagerAdminService } from './manager-admin.service';
 
 /**
- * Platform administration: companies and their API keys.
+ * Platform administration: companies, their managers (F11) and their API keys.
  *
  * It depends on two things from elsewhere, both pure and both imported
  * directly rather than injected:
@@ -18,10 +19,15 @@ import { CompanyAdminService } from './company-admin.service';
  *   `normaliseBlockedCategories` - likewise, so a company created with a
  *                              blocked list matches expenses the same way one
  *                              edited through F07 does.
+ *
+ * `PasswordService` is INJECTED rather than imported, because it carries the
+ * bcrypt cost from validated configuration. `AuthModule` is `@Global`, so it
+ * is available here without being listed in `imports` - and injecting it is
+ * what guarantees a manager created here is hashed exactly as login verifies.
  */
 @Module({
   imports: [PrismaModule],
   controllers: [AdminController],
-  providers: [CompanyAdminService, ApiKeyAdminService],
+  providers: [CompanyAdminService, ApiKeyAdminService, ManagerAdminService],
 })
 export class AdminModule {}

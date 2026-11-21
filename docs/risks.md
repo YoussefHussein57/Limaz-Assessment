@@ -554,7 +554,36 @@ raised).
 | **Residual hole** | Provisioning happens outside the application. The schema already supports several managers per company (A6), so the endpoint is a small addition when a credential-delivery mechanism exists |
 | **Automated verification** | F08-B05 asserts `managerCount: 0` on a newly created company - the limitation is pinned rather than incidental |
 | **Manual verification** | Step 8 of the F08 manual cycle |
-| **Status** | `ACCEPTED` - stated in the interface a person actually looks at |
+| **Status** | **`CLOSED` in F11.** See below |
+
+**F11 - closed, with evidence.** The gap is gone rather than better
+documented. `POST /v1/admin/companies/:companyId/managers` creates a manager
+account, and the company detail page has a Managers panel that lists them and
+adds one.
+
+What makes this a closure rather than a smaller version of the same hole:
+
+| The old objection | What was actually built |
+|---|---|
+| "Inventing a password means a predictable or exposed credential" | **Nothing is invented.** The administrator chooses the initial password and hands it over themselves. The response carries no credential at all - there is nothing to leak into a log, a proxy or a devtools panel |
+| "An invitation flow is a subsystem the assessment does not ask for" | None was built. No email, no tokens, no reset path - and the UI says so plainly rather than implying a reset link exists |
+
+- **Closing claim, verified:** F11-T22 creates a manager through the API, signs
+  in as that account, submits an expense through the company's own key, and
+  resolves the review it opens - asserting in PostgreSQL that
+  `resolvedByUserId` is the account that did not exist when the test started.
+- **Privilege escalation refused:** `role` and `companyId` are written by the
+  server and are absent from a `.strict()` schema, so a body claiming
+  `PLATFORM_ADMIN` or another tenant is a 400 that creates nothing (F11-T10,
+  F11-T11). A provisioned manager cannot provision further managers (F11-T16b).
+- **Still deliberately absent:** deletion, deactivation, a role editor,
+  password reset, transfer between companies, and creating another platform
+  administrator. Each is a wider authority than "set this company up".
+- **New limitation, recorded as R-36:** there is no way to change or reset a
+  manager's password in the application.
+
+The F09 note below is kept as the record of what the scope was before, and why
+the earlier answer was defensible rather than lazy.
 
 **F09 re-review against the original assessment.** Section 2 asks for **two
 seeded companies**, a manager for each and a platform admin; section 6 asks
@@ -607,14 +636,32 @@ network failure cannot mint a second credential by itself.
 | **Automated verification** | F02-T30-live asserts a foreign Origin is refused |
 | **Status** | `ACCEPTED` - documented where a reviewer will hit it |
 
+### R-36 - A manager's password cannot be changed in the application
+
+| | |
+|---|---|
+| **Component** | `ManagerAdminService`, and the absence of anything else |
+| **Description** | An administrator sets a manager's initial password at creation. After that there is **no way to change it** - no self-service change, no administrator reset, and no forced change on first sign-in. The account keeps the password it was created with until somebody writes a new hash by hand |
+| **Why it was not built** | A reset path needs either email delivery with token lifetimes, or an administrator-set replacement - and the second is a route that overwrites a credential, which deserves the same care as issuing one. Neither is asked for by the assessment, and F11's scope is "a company can be set up end to end", not "accounts can be administered" |
+| **Likelihood** | Certain, for any account whose password needs changing |
+| **Impact** | Low here - these are demonstration accounts on a local deployment. In a real deployment it would be **High**, because a password known to have leaked could not be replaced |
+| **Severity** | **Low** in this deployment, stated honestly rather than scored by its worst case |
+| **Mitigation** | **Said out loud in the interface.** The success panel after creating a manager states that nothing is emailed, that there is no reset link, and that the person cannot change it in the application. The code's comments say the same, so nobody reads the absence as an oversight |
+| **Residual hole** | The whole of it. This is an accepted gap, not a mitigated one |
+| **Automated verification** | None, deliberately - there is no behaviour to assert. The absence is documented, and F11-T13 pins the related property that no response ever carries a password or a hash |
+| **Status** | `ACCEPTED` - scoped out, stated where a person sees it |
+
 ## Summary
 
 | Severity | Open | In progress | Mitigated | Accepted |
 |---|---|---|---|---|
 | Critical | - | - | R-01, R-02, R-03, R-05, R-10, R-21 | R-20 |
 | High | R-06, R-15 | - | R-04, R-07, R-08, R-12, R-14 | R-18, R-24, R-26 |
-| Medium | R-13 | - | R-16 | R-11, R-17, R-19, R-22, R-23, R-25, R-27, **R-32** |
-| Low | - | - | **R-29** | R-09, R-28, R-30, R-31, **R-33** |
+| Medium | R-13 | - | R-16 | R-11, R-17, R-19, R-22, R-23, R-25, R-27 |
+| Low | - | - | **R-29** | R-09, R-28, R-30, R-31, **R-33**, **R-36** |
+
+**Closed:** R-32, by F11. It is no longer an accepted limitation - the gap it
+described does not exist any more, and the evidence is named in its entry.
 
 ## Review log
 
@@ -635,3 +682,4 @@ network failure cannot mint a second credential by itself.
 | 2026-11-21 | F06 closure | **R-29 moved to `MITIGATED`**: the category filter now reads the company's whole vocabulary from `GET /v1/dashboard/expense-categories`, bounded at 200 and flagging truncation, verified by F06-T51 to T55. R-28 stays `ACCEPTED` but the control no longer mislabels itself. **R-30 added and accepted** after analysing the dependency path rather than the audit count. R-23 re-checked and unchanged: the three remaining browser-only rows (T35, T45, T46) were executed and all three found real defects, which is evidence for the risk rather than against it |
 | 2026-11-21 | F07 completed | **R-31 added and accepted**: concurrent policy edits are last-write-wins, narrowed to the changed field by sending a partial PATCH. R-01 re-verified on the two policy endpoints (F07-B08 to B12). R-04 re-checked: F07 added no resolution path of its own and ADR-004 semantics are unchanged - the conflict case is now exercised through the UI with two independent sessions (F07-F10). R-23 unchanged: the resolution and policy flows are browser-verified and recorded as such |
 | 2026-11-21 | F08 completed | **R-32 and R-33 added and accepted**, both surfaced in the interface rather than only in this register. R-08 (API key handling) moved to `MITIGATED` with measured evidence: the plaintext appears nowhere in the table (F08-B20), no response carries a hash (F08-B22), the lifecycle is enforced inside the authentication WHERE clause (F08-B29 to B31, B36), and two concurrent rotations produce exactly one winner (F08-B34). R-01 re-verified on the one module that is deliberately NOT tenant-scoped: the company id is a selector applied after the role check, and a mismatched company/key pair mutates nothing (F08-B32, B38) |
+| 2026-11-21 | F11 completed | **R-32 CLOSED**, not re-accepted: manager provisioning exists, and F11-T22 proves it by signing in as an account created through the API and resolving a real review. **R-36 added and accepted** - the gap F11 deliberately did not close, which is password change and reset. R-01 re-verified on the two new routes: `role` and `companyId` are written by the server and absent from a `.strict()` schema, so a body claiming either is a 400 that creates nothing (F11-T10, F11-T11), and a provisioned manager can reach neither another company's data nor platform administration (F11-T16, F11-T16b) |

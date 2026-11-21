@@ -15,8 +15,15 @@ import type { Principal } from '../auth/principal.types';
 import { assertUuid } from '../common/uuid';
 import { ApiKeyAdminService } from './api-key-admin.service';
 import { CompanyAdminService } from './company-admin.service';
-import type { ApiKeySummary, CompanyDetail, CompanyPage, IssuedApiKey } from './admin.types';
-import { createCompanySchema, listCompaniesSchema } from './dto/admin.dto';
+import { ManagerAdminService } from './manager-admin.service';
+import type {
+  ApiKeySummary,
+  CompanyDetail,
+  CompanyPage,
+  IssuedApiKey,
+  ManagerSummary,
+} from './admin.types';
+import { createCompanySchema, createManagerSchema, listCompaniesSchema } from './dto/admin.dto';
 
 /**
  * Platform administration.
@@ -55,6 +62,7 @@ export class AdminController {
   constructor(
     private readonly companies: CompanyAdminService,
     private readonly apiKeys: ApiKeyAdminService,
+    private readonly managers: ManagerAdminService,
   ) {}
 
   @Get('companies')
@@ -144,6 +152,57 @@ export class AdminController {
     assertUuid(keyId, 'keyId');
 
     return this.apiKeys.rotate(companyId, keyId);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Managers (F11)
+  //
+  // Same shape as the key routes above and the same security model: the
+  // company id is a SELECTOR applied after `@Roles('PLATFORM_ADMIN')` on the
+  // class has already established the caller. It is never evidence.
+  //
+  // What differs is which fields the server refuses to take from the caller.
+  // `role` and `companyId` are written by `ManagerAdminService` and are not in
+  // `createManagerSchema` at all, so a body carrying either is a 400 from a
+  // `.strict()` parse rather than a field somebody downstream has to remember
+  // not to spread (F11-T10, F11-T11).
+  // ---------------------------------------------------------------------------
+
+  @Get('companies/:companyId/managers')
+  async listManagers(
+    @Param('companyId') companyId: string,
+  ): Promise<{ items: readonly ManagerSummary[] }> {
+    assertUuid(companyId, 'companyId');
+
+    // Wrapped, for the same reason the key listing is: a top-level array
+    // cannot grow a `nextCursor` later without breaking every caller.
+    return { items: await this.managers.list(companyId) };
+  }
+
+  /**
+   * Creates one manager for this company.
+   *
+   * 201, and the body carries NO credential. The administrator chose the
+   * initial password and already has it; echoing it back would put a secret
+   * into a response, a proxy log and a devtools panel for no gain. That is
+   * why there is no `no-store` header here - unlike the three routes above,
+   * nothing in this response is worth caching protection.
+   */
+  @Post('companies/:companyId/managers')
+  @HttpCode(HttpStatus.CREATED)
+  async createManager(
+    @Param('companyId') companyId: string,
+    @Body() body: unknown,
+  ): Promise<ManagerSummary> {
+    assertUuid(companyId, 'companyId');
+
+    const parsed = createManagerSchema.safeParse(body);
+
+    if (!parsed.success) {
+      throw invalidRequest(parsed.error);
+    }
+
+    return this.managers.create(companyId, parsed.data);
   }
 
   @Post('companies/:companyId/api-keys/:keyId/revoke')

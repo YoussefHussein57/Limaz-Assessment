@@ -109,6 +109,11 @@ So the limitation is **surfaced rather than hidden**: the company detail page
 opens with a warning saying the company has no manager, that its backend can
 submit but nobody can review, and why. Recorded as **R-32**.
 
+> **Superseded by F11.** The warning now points at a Managers panel on the
+> same page rather than ending in "this version does not automate that", and
+> R-32 is closed. See
+> [F11-manager-provisioning.md](F11-manager-provisioning.md).
+
 ### The blocked list goes through the same normaliser
 
 `normaliseBlockedCategories` from F07, which wraps `normaliseCategory` from
@@ -287,7 +292,7 @@ on screen, defeating the one-time display entirely.
 
 | Not built | Why |
 |---|---|
-| Manager account creation | Would need an invented password or an invitation system. Surfaced as a warning and recorded as R-32 |
+| ~~Manager account creation~~ | Was a warning and R-32. **Built in F11** - the administrator chooses the initial password, so nothing is invented and no invitation system exists |
 | A "reveal key" endpoint | Only the hash is stored. Such an endpoint could not exist without storing the secret, which is the thing being avoided |
 | Administrator access to expenses | Managing accounts is not reading spending. The API refuses it |
 | Administrator policy editing | That is the company manager's authority (F07) |
@@ -302,7 +307,8 @@ on screen, defeating the one-time display entirely.
 
 | # | Limitation |
 |---|---|
-| R-32 | A new company has no manager, so nobody can review its flagged expenses until one is provisioned by other means |
+| ~~R-32~~ | **Closed in F11.** A new company still has no manager until somebody adds one, but adding one is now a button rather than a database insert |
+| R-36 | A manager’s password cannot be changed or reset in the application |
 | R-33 | A key issuance is not idempotent - a lost response leaves an unknown credential active until it is revoked |
 | - | The environment token reads `prod` for any non-local deployment, including staging |
 | - | Revocation does not cancel an in-flight request |

@@ -17,6 +17,7 @@ The questions are written to attack **our actual choices**, not textbook theory.
 | [F06 - Manager dashboard](F06-manager-dashboard.md) | 5 | Not yet |
 | [F07 - Reviews and policy settings](F07-reviews-and-policy-settings.md) | 5 | Not yet |
 | [F08 - Platform administration](F08-platform-administration.md) | 5 | Not yet |
+| [F11 - Manager provisioning](F11-manager-provisioning.md) | 5 | Not yet |
 
 ## Learning gaps
 
@@ -132,7 +133,7 @@ revising means reading the argument rather than a summary of it.
 
 If you want the single question that shows the most: **"tell me about a
 mistake you made in this project and how you found it."** The answer is in
-[`AI_LOG.md`](../../AI_LOG.md) - 50 of them, including a live API key written
+[`AI_LOG.md`](../../AI_LOG.md) - 53 of them, including a live API key written
 into a screenshot by a redaction that React undid, an acceptance check that had
 been failing for six features, and a seed that refused to start as soon as
 anybody used the application.

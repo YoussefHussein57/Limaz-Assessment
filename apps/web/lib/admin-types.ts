@@ -62,3 +62,33 @@ export interface CreateCompanyInput {
   frequencyWindowMinutes?: number;
   blockedCategories?: string[];
 }
+
+/**
+ * A company manager, as the administrator sees them (F11).
+ *
+ * There is no password and no hash in this shape, and the API never sends
+ * one. There is also no "last signed in" and no account status, because
+ * neither is recorded anywhere in this system - showing an invented one would
+ * be a fabricated metric.
+ */
+export interface ManagerSummary {
+  id: string;
+  email: string;
+  displayName: string;
+  role: 'MANAGER';
+  createdAt: string;
+}
+
+export interface CreateManagerInput {
+  displayName: string;
+  email: string;
+  /**
+   * The initial password the administrator chose.
+   *
+   * It travels in the request body, over the same same-origin proxy every
+   * other mutation uses, and it is NOT echoed back in the response. The form
+   * clears it on success so it does not sit in React state behind a closed
+   * dialog.
+   */
+  password: string;
+}

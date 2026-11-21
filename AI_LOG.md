@@ -1183,6 +1183,87 @@ acceptance script nobody runs (AI_LOG 45) or a recovery path nobody injects
 (AI_LOG 46).
 
 
+## Defects found during F11
+
+### 51. Email validation ran before the trim that would have made it valid
+
+The manager creation schema was written in the order it reads naturally:
+
+```ts
+email: z.email('...').max(320).trim().toLowerCase()
+```
+
+Every test passed except the one that pasted an address the way a person
+actually does, with the whitespace a copy from a spreadsheet or an email
+client carries:
+
+```
+'  MiXeD-abc@F11.TEST  '  ->  400 invalid_request
+```
+
+`.trim()` and `.toLowerCase()` are string **transforms**; `z.email()` is a
+separate **schema**. Chained that way, the format check runs against the raw
+input and refuses the value for whitespace it was about to remove.
+
+**Fix:** pipe instead of chain, so the transforms run first.
+
+```ts
+email: z.string().max(320).trim().toLowerCase().pipe(z.email('...'))
+```
+
+Found by **a test written to assert the normalisation claim end to end**
+(F11-T07) rather than by reading the schema - which I had read, twice, and
+which looks correct until you know that two of those four calls build a
+different kind of thing from the other two.
+
+### 52. A 404 that was my test harness, not the product
+
+F11's closing claim is that an account created through the API can resolve a
+real review. The test did exactly that and the resolve returned **404**.
+
+The obvious reading is a routing or authorization defect. It was neither:
+`createF08TestApp` composes `AdminModule`, `AuthModule` and `ExpensesModule`,
+and **not** `ReviewsModule`. The route did not exist in that application.
+
+Then, with the module added, the same call returned **400** - because I had
+sent `{ outcome: 'APPROVED' }`, and the real DTO takes `{ decision: 'APPROVE' }`.
+I had written the manager's vocabulary rather than the schema's.
+
+**Fix:** a dedicated `f11-test-app.ts` that includes `ReviewsModule`, with a
+comment saying why, and the correct request body.
+
+Both are my mistakes rather than the AI's, and both are worth recording
+because they share a failure mode with the product defects above: **a harness
+that is wrong looks exactly like a product that is broken**, and the cheapest
+way to tell them apart is to check what the harness actually wired up before
+reaching for the source.
+
+### 53. I broke my own baseline verification by editing a file it was building
+
+Three F00 acceptance checks failed in a run that had passed an hour earlier:
+
+```
+FAIL  F00-T02  code=000 body={"status":"ok",...}
+FAIL  F00-T03  api RestartCount=unknown
+FAIL  F00-T05  proxy did not return a healthy api response
+```
+
+`code=000` with a healthy body in the file is the tell: curl never connected,
+and the body was stale from the previous run. The cause was mine twice over.
+`verify-f00.sh` runs `docker compose down -v && up -d --build`, so it builds
+**the working tree** - and I had edited `schema.prisma` while it ran, giving
+the rebuilt image a Prisma client expecting a column no migration had created.
+Then, stopping that run mid-`docker compose`, I left containers half-created
+for the next one.
+
+**Fix, and the rule that comes out of it:** `git stash`, run the four
+acceptance scripts against the clean core tree, tag the verified commit, then
+restore the work in progress. Re-run on a settled stack: **18/18**.
+
+The three failures were never product defects. They were me, holding the thing
+I was measuring.
+
+
 ## Running record
 
 | Date | Phase | Notes |
@@ -1209,3 +1290,4 @@ acceptance script nobody runs (AI_LOG 45) or a recovery path nobody injects
 | 2026-11-21 | F08 implementation | Platform administration: companies, onboarding in one transaction, and the API key lifecycle. Rotation uses a conditional update rather than an advisory lock, because the invariant is one row rather than F04's count across many. Two defects: a key label derived from the build instead of the deployment, and - in my own verification - a live key written into a screenshot by a redaction that React undid. 42 new tests, 487/487 passing |
 | 2026-11-21 | F09 integration and hardening | Executed the paths earlier reports described. Five defects, four of them things a reviewer would have hit: an acceptance check failing since F02.1, a resolve button left permanently disabled after a failed request, an administrator told "the server did not answer" when the server had refused, a 64-character identifier pushing the expense detail 192px off a 360px screen, and a seed that refused to start once anybody used the application. Both F07-F13 network failure modes injected for real and checked against the database |
 | 2026-11-21 | F10 documentation | README rewritten for a reviewer opening the repository for the first time: quick start, verified credentials, a five-minute walkthrough, API examples, business rules, concurrency with sequence diagrams, security with what each control does NOT do, deployment and scaling with measured query plans, and every accepted limitation with its risk id. The eight decisions answered in full. Submission materials prepared, not sent |
+| 2026-11-21 | F11 implementation | Company manager provisioning, closing R-32. Two admin routes, no migration - the `User` model already carried everything. The administrator chooses the initial password, so the response carries no credential at all. Three defects recorded (51-53), two of them mine rather than the AI's. 30 new tests, 517/517 API passing, verified end to end in the browser: two managers created, a duplicate refused, and the new account signed in to its own workspace |

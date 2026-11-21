@@ -177,7 +177,7 @@ its risk entry.
 | 3 | Keyset pagination has no backward cursor; "Older" walks a client-held trail | R-28 |
 | 4 | Three high and nineteen moderate `npm audit` findings, all in dev tooling, measured unreachable | R-30 |
 | 5 | Concurrent policy edits are last-write-wins with no conflict reported | R-31 |
-| 6 | A newly created company has no manager until one is provisioned outside the app | R-32 |
+| 6 | ~~A newly created company has no manager until one is provisioned outside the app~~ **Closed in F11** - the admin workspace creates them | ~~R-32~~ |
 | 7 | API key issuance is not idempotent; a lost response leaves a key nobody holds | R-33 |
 | 8 | The `Origin` check refuses a different spelling of the same host | R-34 |
 | 9 | No load testing, and no screen-reader or WCAG conformance audit | F09 §12 |
