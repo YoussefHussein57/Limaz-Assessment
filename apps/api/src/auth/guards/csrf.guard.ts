@@ -5,10 +5,12 @@ import {
   Inject,
   Injectable,
 } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import type { IncomingMessage } from 'node:http';
 import { ENV } from '../../config/config.module';
 import type { Env } from '../../config/env.schema';
 import { API_KEY_HEADER } from '../api-key.service';
+import { IS_WEBHOOK_EXEMPT } from '../decorators/webhook-exempt.decorator';
 
 /** Required on every state-changing request that is not API-key authenticated. */
 export const CSRF_HEADER = 'x-limaz-client';
@@ -67,7 +69,10 @@ const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS']);
 export class CsrfGuard implements CanActivate {
   private readonly appOrigin: string;
 
-  constructor(@Inject(ENV) env: Env) {
+  constructor(
+    @Inject(ENV) env: Env,
+    private readonly reflector: Reflector,
+  ) {
     this.appOrigin = env.APP_ORIGIN;
   }
 
@@ -80,6 +85,23 @@ export class CsrfGuard implements CanActivate {
     const method = (request.method ?? 'GET').toUpperCase();
 
     if (SAFE_METHODS.has(method)) {
+      return true;
+    }
+
+    // A route that authenticates with a per-request signature and reads no
+    // cookie. Same exemption, same reasoning, as the API-key branch below:
+    // CSRF needs a credential the BROWSER attaches automatically, and a
+    // cross-site page cannot produce an HMAC it has no key for.
+    //
+    // Opt-in per route, never a pattern match, and exactly one route carries
+    // it today - F12-T06 asserts that count, so adding a second is a
+    // deliberate act somebody has to defend.
+    if (
+      this.reflector.getAllAndOverride<boolean>(IS_WEBHOOK_EXEMPT, [
+        context.getHandler(),
+        context.getClass(),
+      ])
+    ) {
       return true;
     }
 

@@ -8,7 +8,7 @@
  * The caller stops retrying, and the expense is simply lost.
  *
  * So the question is never "did a unique constraint fire?" but "did
- * `expenses_companyId_externalId_key` fire?" (test F03-T24).
+ * `expenses_companyId_source_externalId_key` fire?" (test F03-T24).
  *
  * WHY PRISMA'S OWN CODE IS NOT ENOUGH
  *
@@ -21,8 +21,15 @@
  * use, for the same reason.
  */
 
-/** The constraint that enforces tenant-scoped idempotency (ADR-001). */
-export const EXPENSE_IDEMPOTENCY_CONSTRAINT = 'expenses_companyId_externalId_key';
+/**
+ * The constraint that enforces tenant-scoped idempotency (ADR-001).
+ *
+ *  joined the key in F12 and the INDEX NAME changed with it. That
+ * rename is load-bearing: this constant is compared against the name
+ * PostgreSQL reports, so a stale value would make every genuine conflict
+ * fall through as an unrecognised error and surface as a 500.
+ */
+export const EXPENSE_IDEMPOTENCY_CONSTRAINT = 'expenses_companyId_source_externalId_key';
 
 /** PostgreSQL `unique_violation`. */
 const UNIQUE_VIOLATION = '23505';

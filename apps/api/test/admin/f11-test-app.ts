@@ -44,6 +44,10 @@ export async function createF11TestApp(): Promise<F11TestApp> {
     COOKIE_SECURE: 'true',
     BCRYPT_COST: '10',
     DB_POOL_MAX: '10',
+    // F12 requires this in every environment, with no default - see the
+    // comment in env.schema.ts. A fixed test value, because an encryption
+    // key that changed between runs would make a sealed secret unreadable.
+    WEBHOOK_ENCRYPTION_KEY: 'bGltYXotdGVzdC13ZWJob29rLWVuYy1rZXktMzJieXQ=',
   });
 
   const moduleRef = await Test.createTestingModule({

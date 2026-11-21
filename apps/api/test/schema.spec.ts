@@ -103,7 +103,7 @@ describe('F01 database schema', () => {
         // Manager dashboard: this company's open reviews.
         'reviews_companyId_state_idx',
         // Tenant-scoped idempotency.
-        'expenses_companyId_externalId_key',
+        'expenses_companyId_source_externalId_key',
         // Target of the composite foreign key from reviews.
         'expenses_id_companyId_key',
         // Credential lookups.

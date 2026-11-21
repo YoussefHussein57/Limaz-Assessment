@@ -4,6 +4,7 @@ import { AdminController } from './admin.controller';
 import { ApiKeyAdminService } from './api-key-admin.service';
 import { CompanyAdminService } from './company-admin.service';
 import { ManagerAdminService } from './manager-admin.service';
+import { WebhookIntegrationModule } from '../webhooks/webhook-integration.module';
 
 /**
  * Platform administration: companies, their managers (F11) and their API keys.
@@ -26,7 +27,7 @@ import { ManagerAdminService } from './manager-admin.service';
  * what guarantees a manager created here is hashed exactly as login verifies.
  */
 @Module({
-  imports: [PrismaModule],
+  imports: [PrismaModule, WebhookIntegrationModule],
   controllers: [AdminController],
   providers: [CompanyAdminService, ApiKeyAdminService, ManagerAdminService],
 })

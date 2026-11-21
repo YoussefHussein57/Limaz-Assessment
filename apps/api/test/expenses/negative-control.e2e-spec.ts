@@ -143,7 +143,7 @@ describe('F03 negative controls', () => {
     await expect(
       prisma.$executeRawUnsafe(
         `CREATE UNIQUE INDEX "${EXPENSE_IDEMPOTENCY_CONSTRAINT}" ` +
-          `ON "expenses" ("companyId", "externalId")`,
+          `ON "expenses" ("companyId", "source", "externalId")`,
       ),
     ).rejects.toThrow(/could not create unique index/u);
 
@@ -212,7 +212,7 @@ describe('F03 negative controls', () => {
  * IT IS AN INDEX, NOT A TABLE CONSTRAINT.
  *
  * Prisma's `@@unique` emits `CREATE UNIQUE INDEX`, not `ALTER TABLE ... ADD
- * CONSTRAINT`, so `expenses_companyId_externalId_key` appears in `pg_indexes`
+ * CONSTRAINT`, so `expenses_companyId_source_externalId_key` appears in `pg_indexes`
  * and is absent from `pg_constraint` entirely. The uniqueness guarantee and
  * the 23505 it raises are identical either way - but the DDL to remove it,
  * and the catalogue to verify it in, are not. The first version of this test
@@ -228,7 +228,7 @@ async function restoreConstraint(prisma: PrismaClient): Promise<void> {
   // this negative control produces: PostgreSQL REFUSES to build a unique index
   // over rows that violate it -
   //
-  //   23505  could not create unique index "expenses_companyId_externalId_key"
+  //   23505  could not create unique index "expenses_companyId_source_externalId_key"
   //
   // so the damage done while the index was absent is not merely detectable
   // afterwards, it physically blocks the guarantee from being restored. In a
@@ -241,7 +241,7 @@ async function restoreConstraint(prisma: PrismaClient): Promise<void> {
     WITH duplicates AS (
       SELECT ctid FROM (
         SELECT ctid, row_number() OVER (
-          PARTITION BY "companyId", "externalId" ORDER BY "createdAt", ctid
+          PARTITION BY "companyId", "source", "externalId" ORDER BY "createdAt", ctid
         ) AS rn
         FROM "expenses"
       ) ranked WHERE rn > 1
@@ -255,7 +255,7 @@ async function restoreConstraint(prisma: PrismaClient): Promise<void> {
     DELETE FROM "expenses" WHERE ctid IN (
       SELECT ctid FROM (
         SELECT ctid, row_number() OVER (
-          PARTITION BY "companyId", "externalId" ORDER BY "createdAt", ctid
+          PARTITION BY "companyId", "source", "externalId" ORDER BY "createdAt", ctid
         ) AS rn
         FROM "expenses"
       ) ranked WHERE rn > 1
@@ -264,7 +264,7 @@ async function restoreConstraint(prisma: PrismaClient): Promise<void> {
 
   await prisma.$executeRawUnsafe(
     `CREATE UNIQUE INDEX IF NOT EXISTS "${EXPENSE_IDEMPOTENCY_CONSTRAINT}" ` +
-      `ON "expenses" ("companyId", "externalId")`,
+      `ON "expenses" ("companyId", "source", "externalId")`,
   );
 
   const rows = await prisma.$queryRaw<{ indexname: string }[]>`

@@ -13,6 +13,7 @@ import { ApiError, userMessage } from '@/lib/api-error';
 import { formatDateTime, formatMoney } from '@/lib/format';
 import { ApiKeyPanel } from './api-key-panel';
 import { ManagerPanel } from './manager-panel';
+import { WebhookIntegrationPanel } from './webhook-integration-panel';
 
 /**
  * One company, from the administrator side.
@@ -126,6 +127,10 @@ export function CompanyDetailView({ companyId }: { companyId: string }) {
           <ManagerPanel companyId={company.id} />
 
           <ApiKeyPanel companyId={company.id} />
+
+          {/* F12. After the keys, because a card integration is a second way
+              in rather than the primary one. */}
+          <WebhookIntegrationPanel companyId={company.id} />
 
           <Card>
             <CardHeader

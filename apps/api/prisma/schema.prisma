@@ -67,6 +67,38 @@ enum RuleCode {
   BLOCKED_CATEGORY
 }
 
+/// Where an expense came from (F12).
+///
+/// This is NOT decoration. It is half of the idempotency key, because the two
+/// sources name their expenses from different authorities: a company's backend
+/// chooses its own externalId, and the card provider's transactionId is chosen
+/// by somebody that backend has never spoken to. Without a source the two
+/// namespaces would share one unique constraint, and an ordinary client could
+/// pick an externalId that collides with a future card transaction - a prefix
+/// convention cannot prevent that, because the client picks the whole string.
+///
+/// A second card provider would be a third value here, not a parsing rule.
+enum ExpenseSource {
+  API
+  CARD_WEBHOOK
+}
+
+/// The lifecycle of one accepted webhook delivery (F12).
+enum WebhookEventStatus {
+  /// Durably accepted, waiting for a worker.
+  PENDING
+  /// Claimed by a worker. A claim older than the lease is recoverable.
+  PROCESSING
+  /// An expense exists for it. Terminal.
+  PROCESSED
+  /// A supported event we will not retry. Terminal.
+  FAILED
+  /// A valid, authenticated event whose type this system does not handle.
+  /// Terminal, and deliberately NOT an error: the provider retries until it
+  /// gets a 2xx, so refusing forever would be an infinite retry loop.
+  IGNORED
+}
+
 // -----------------------------------------------------------------------------
 // Tenancy
 // -----------------------------------------------------------------------------
@@ -85,6 +117,9 @@ model Company {
   users    User[]
   apiKeys  ApiKey[]
   expenses Expense[]
+
+  webhookIntegration WebhookIntegration?
+  webhookEvents      WebhookEvent[]
 
   @@map("companies")
 }
@@ -202,8 +237,19 @@ model Expense {
   id        String @id @default(uuid(7)) @db.Uuid
   companyId String @db.Uuid
 
-  /// Supplied by the company's backend. Unique per company, not globally.
+  /// The caller's own identifier for this expense.
+  ///
+  /// For `source = API` it is the `externalId` the company's backend supplied.
+  /// For `source = CARD_WEBHOOK` it is the provider's `transactionId` - not
+  /// the event id, because the assessment's guarantee is that each
+  /// TRANSACTION becomes exactly one expense, and a provider may legitimately
+  /// deliver two different events about the same payment.
+  ///
+  /// Unique per (company, source), not globally and not per company alone.
+  /// See the `ExpenseSource` comment for why the source belongs in the key.
   externalId String
+  /// Where this expense entered the system. See `ExpenseSource`.
+  source     ExpenseSource @default(API)
   employeeId String
 
   /// Minor units as an integer (ADR-005). Never a float: binary floating point
@@ -242,20 +288,24 @@ model Expense {
   /// Tenant-scoped idempotency. The database is the authority: a check-then-
   /// insert in application code loses the race when two retries arrive
   /// together (ADR-001, risk R-03).
-  @@unique([companyId, externalId])
-
+  ///
+  /// `source` joined the key in F12 and does NOT weaken it. For an ordinary
+  /// caller the source is always `API`, so `(companyId, 'API', externalId)` is
+  /// exactly as unique as `(companyId, externalId)` was: a company's backend
+  /// still cannot create two expenses with one identifier. What the source
+  /// adds is a second namespace that the first one cannot be made to collide
+  /// with, deliberately or by accident.
+  @@unique([companyId, source, externalId])
   /// Looks redundant because `id` is already unique - it is not. Postgres
   /// requires a UNIQUE on exactly the referenced columns for them to be the
   /// target of a foreign key. This is what lets Review reference
   /// (id, companyId) together, so a review's tenant can never drift from its
   /// expense's tenant.
   @@unique([id, companyId])
-
   /// The frequency query: company + employee + a spentAt range. Column order
   /// matters - the range column must come last for this to be a range scan
   /// (ADR-007).
   @@index([companyId, employeeId, spentAt])
-
   /// The manager dashboard: a company's expenses, most recent first. The index
   /// above cannot serve this, because employeeId sits between the two columns
   /// this query uses.
@@ -322,8 +372,162 @@ model Review {
   /// "one review per expense" should be stated directly rather than inferred
   /// from a two-column constraint plus the composite foreign key.
   @@unique([expenseId, companyId])
-
   /// The manager's primary query: this company's open reviews.
   @@index([companyId, state])
   @@map("reviews")
+}
+
+// -----------------------------------------------------------------------------
+// Card webhook intake (F12 - the assessment's optional bonus, section 10)
+// -----------------------------------------------------------------------------
+
+/// One company's card-provider integration.
+///
+/// ---------------------------------------------------------------------------
+/// WHY THIS SECRET IS ENCRYPTED AND NOT HASHED, UNLIKE EVERY OTHER CREDENTIAL
+/// ---------------------------------------------------------------------------
+///
+/// `ApiKey` and `Session` store only a SHA-256 hash, and that is the right
+/// answer for both: the server is handed the full credential and only has to
+/// decide whether it matches, so a one-way function is enough and a database
+/// dump yields nothing usable.
+///
+/// HMAC is a different problem. The provider never sends the secret - it
+/// sends a MAC computed WITH the secret, and verifying it means computing the
+/// same MAC on our side. That needs the key material itself. A hash cannot
+/// produce it, and "HMAC with the hash as the key" is not the protocol the
+/// provider implements, so it would simply never verify.
+///
+/// So the secret is stored reversibly, and the question becomes who can
+/// reverse it. AES-256-GCM with a key that lives in configuration rather than
+/// in the database: a stolen dump is inert without `WEBHOOK_ENCRYPTION_KEY`,
+/// and GCM is authenticated, so a tampered ciphertext fails to decrypt rather
+/// than silently yielding a different key.
+///
+/// This is weaker than hashing, unavoidably, and it is recorded as such
+/// (R-35) rather than presented as equivalent.
+model WebhookIntegration {
+  id        String @id @default(uuid(7)) @db.Uuid
+  /// One integration per company - `@unique` is what makes this one-to-one.
+  companyId String @unique @db.Uuid
+
+  /// The identifier the provider sends in a header so we know WHICH secret to
+  /// verify against.
+  ///
+  /// It is PUBLIC and it is UNTRUSTED. Knowing it grants nothing: it only
+  /// selects a row, and the signature computed with that row's secret is what
+  /// decides whether the request is genuine. An attacker who names another
+  /// company's delivery id is verified against that company's secret, which
+  /// they do not have, and is refused.
+  deliveryId String @unique
+
+  /// AES-256-GCM. Three columns because GCM needs all three to decrypt, and
+  /// splitting them makes it impossible to store one without the others.
+  secretCiphertext Bytes
+  secretIv         Bytes
+  secretAuthTag    Bytes
+
+  /// How many times the signing secret has been replaced. Shown to an
+  /// administrator so "did my rotation land?" is answerable without a secret
+  /// ever being displayed again.
+  secretVersion Int @default(1)
+
+  createdAt DateTime  @default(now()) @db.Timestamptz(3)
+  updatedAt DateTime  @updatedAt @db.Timestamptz(3)
+  rotatedAt DateTime? @db.Timestamptz(3)
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@map("webhook_integrations")
+}
+
+/// The durable inbox: one row per ACCEPTED delivery.
+///
+/// ---------------------------------------------------------------------------
+/// WHY A TABLE AND NOT A QUEUE PROCESS
+/// ---------------------------------------------------------------------------
+///
+/// The provider retries until it gets a 2xx, so a 2xx is a PROMISE that the
+/// event will be processed. An in-memory queue cannot keep that promise: the
+/// process restarts and the event is gone, while the provider has already
+/// been told it landed and will never send it again.
+///
+/// Redis or RabbitMQ would keep it, at the cost of a second piece of
+/// infrastructure in a system whose whole deployment is one
+/// `docker compose up`. PostgreSQL is already here, already transactional,
+/// and `FOR UPDATE SKIP LOCKED` is a queue claim that two workers cannot both
+/// win. The trade-off - polling rather than push, and one database doing two
+/// jobs - is real and is written down in the README.
+///
+/// NOTHING RESEMBLING A CARD NUMBER IS STORED. The provider's event carries a
+/// cardholder reference, a merchant and an amount; there is no PAN, no expiry
+/// and no CVV in the contract, and none is persisted.
+model WebhookEvent {
+  id String @id @default(uuid(7)) @db.Uuid
+
+  /// The company this event was AUTHENTICATED as, never the one the body
+  /// claimed. It is written from the integration whose secret verified the
+  /// signature.
+  companyId String @db.Uuid
+
+  /// The provider's own event id, for example `evt_8f2c1`.
+  providerEventId String
+  eventType       String
+
+  /// SHA-256 over the event type and its canonical business payload.
+  ///
+  /// It deliberately EXCLUDES the delivery timestamp and the signature. A
+  /// legitimate replay of the same event is signed afresh, so its signature
+  /// headers differ while the payment it describes has not changed; folding
+  /// those into the identity would make every retry look like a new event.
+  payloadHash String
+
+  /// The event's business payload, as accepted. Kept for auditing: "why did
+  /// this expense say 420.00?" is otherwise unanswerable once the provider's
+  /// own logs roll over.
+  payload Json
+
+  status   WebhookEventStatus @default(PENDING)
+  /// How many times a worker has CLAIMED this event. Bounded; see the worker.
+  attempts Int                @default(0)
+
+  receivedAt    DateTime  @default(now()) @db.Timestamptz(3)
+  /// Not before this instant. Backoff is a value in this column, not a sleep
+  /// in a process that a restart would forget.
+  nextAttemptAt DateTime  @default(now()) @db.Timestamptz(3)
+  /// When the current worker claimed it. A claim older than the lease is
+  /// taken to belong to a worker that died, and may be reclaimed.
+  claimedAt     DateTime? @db.Timestamptz(3)
+  processedAt   DateTime? @db.Timestamptz(3)
+
+  /// The expense this event produced, once it has one.
+  ///
+  /// No foreign key, deliberately. The relation is informational, and a
+  /// RESTRICT here would mean an event row could block an expense from ever
+  /// being removed - a coupling the inbox has no business creating.
+  expenseId String? @db.Uuid
+
+  /// A SANITISED reason, never a raw exception. Exception text carries
+  /// connection strings, parameter values and sometimes credentials, and this
+  /// column is rendered in an administrator's browser.
+  lastError String?
+
+  company Company @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  /// DELIVERY deduplication, scoped to the company that was authenticated.
+  ///
+  /// This is a different guarantee from expense idempotency and both are
+  /// needed. This one stops a redelivered event from being processed twice;
+  /// the expense unique constraint stops two different events about one
+  /// transaction from creating two expenses. Neither subsumes the other.
+  ///
+  /// Scoped per company, so two companies whose providers happen to use the
+  /// same event id counter remain independent.
+  @@unique([companyId, providerEventId])
+  /// The worker's claim query: the oldest due row. Partial would be tighter,
+  /// but Prisma cannot express one and the table is small by construction.
+  @@index([status, nextAttemptAt])
+  /// The administrator's listing: one company's events, newest first.
+  @@index([companyId, receivedAt])
+  @@map("webhook_events")
 }

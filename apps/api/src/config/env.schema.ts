@@ -95,7 +95,143 @@ export const envSchema = z.object({
     .min(1, 'DB_POOL_MAX must be at least 1')
     .max(100, 'DB_POOL_MAX must be 100 or fewer')
     .default(10),
+
+  // ---------------------------------------------------------------------------
+  // Card webhook intake (F12)
+  // ---------------------------------------------------------------------------
+
+  /**
+   * The key that encrypts every company's webhook signing secret at rest.
+   *
+   * REQUIRED, with no default, in every environment.
+   *
+   * A default would be a hardcoded production encryption key in a public
+   * repository, which is the same as no encryption at all. Making it required
+   * in production and optional elsewhere is the pattern this codebase already
+   * rejects for `COOKIE_SECURE`: a security property that differs between
+   * environments is a security property nobody tests.
+   *
+   * 32 bytes, because AES-256-GCM takes a 256-bit key. The length is checked
+   * here rather than at first use, so a short key refuses to start the process
+   * instead of failing on the first webhook, hours later.
+   *
+   * The VALUE is never logged, never returned and never included in an error
+   * message - the refusal below names the variable and says what is wrong with
+   * it, which is all an operator needs.
+   */
+  WEBHOOK_ENCRYPTION_KEY: z
+    .string({ error: 'WEBHOOK_ENCRYPTION_KEY is required' })
+    .min(1, 'WEBHOOK_ENCRYPTION_KEY is required')
+    .refine((value) => decodeBase64Key(value)?.length === 32, {
+      message:
+        'WEBHOOK_ENCRYPTION_KEY must be 32 bytes, base64 encoded ' +
+        "(generate one with: node -e \"console.log(require('crypto').randomBytes(32).toString('base64'))\")",
+    }),
+
+  /**
+   * How far a delivery's signature timestamp may sit from our clock.
+   *
+   * This is replay protection, and it is a trade-off in both directions. Too
+   * tight and a legitimate delivery fails because the provider's clock drifts
+   * or its retry queue was backed up; too loose and a captured request stays
+   * replayable for that long.
+   *
+   * Five minutes is the common industry default and is what this contract
+   * documents. Note that it bounds the DELIVERY timestamp, not the
+   * transaction's `spentAt`: a payment from last Tuesday is perfectly normal,
+   * and is accepted as long as the request carrying it was signed just now.
+   */
+  WEBHOOK_TOLERANCE_SECONDS: z.coerce
+    .number({ error: 'WEBHOOK_TOLERANCE_SECONDS must be a number' })
+    .int('WEBHOOK_TOLERANCE_SECONDS must be an integer')
+    .min(30, 'WEBHOOK_TOLERANCE_SECONDS must be at least 30')
+    .max(3_600, 'WEBHOOK_TOLERANCE_SECONDS must be 3600 or fewer')
+    .default(300),
+
+  /** How many times a worker may claim one event before it becomes terminal. */
+  WEBHOOK_MAX_ATTEMPTS: z.coerce
+    .number({ error: 'WEBHOOK_MAX_ATTEMPTS must be a number' })
+    .int('WEBHOOK_MAX_ATTEMPTS must be an integer')
+    .min(1, 'WEBHOOK_MAX_ATTEMPTS must be at least 1')
+    .max(20, 'WEBHOOK_MAX_ATTEMPTS must be 20 or fewer')
+    .default(5),
+
+  /**
+   * How long a worker's claim is respected before another may take the event.
+   *
+   * This is the crash-recovery window. Too short and a slow-but-alive worker
+   * has its event stolen while it is still working on it - which is safe,
+   * because expense submission is idempotent, but wasteful. Too long and a
+   * genuinely dead worker's events sit untouched for that long.
+   */
+  WEBHOOK_CLAIM_LEASE_SECONDS: z.coerce
+    .number({ error: 'WEBHOOK_CLAIM_LEASE_SECONDS must be a number' })
+    .int('WEBHOOK_CLAIM_LEASE_SECONDS must be an integer')
+    .min(5, 'WEBHOOK_CLAIM_LEASE_SECONDS must be at least 5')
+    .max(3_600, 'WEBHOOK_CLAIM_LEASE_SECONDS must be 3600 or fewer')
+    .default(60),
+
+  /** Idle poll interval. Bounded below so a misconfiguration cannot busy-loop. */
+  WEBHOOK_POLL_INTERVAL_MS: z.coerce
+    .number({ error: 'WEBHOOK_POLL_INTERVAL_MS must be a number' })
+    .int('WEBHOOK_POLL_INTERVAL_MS must be an integer')
+    .min(100, 'WEBHOOK_POLL_INTERVAL_MS must be at least 100')
+    .max(60_000, 'WEBHOOK_POLL_INTERVAL_MS must be 60000 or fewer')
+    .default(1_000),
+
+  /**
+   * Whether this process runs the background worker.
+   *
+   * On in a normal deployment. Off in the test suite, where the worker is
+   * driven one event at a time so that "the event was processed" is an
+   * assertion rather than a sleep.
+   */
+  WEBHOOK_WORKER_ENABLED: z
+    .enum(['true', 'false'])
+    .default('true')
+    .transform((value) => value === 'true'),
+
+  /**
+   * Whether the sandbox payment simulator exists.
+   *
+   * An EXPLICIT flag, deliberately not derived from `NODE_ENV`.
+   * `NODE_ENV=production` means "this is a production BUILD", and the Docker
+   * image sets it in every environment including a laptop - the exact mistake
+   * that made development stacks mint keys labelled `lmz_prod_` (AI_LOG 42).
+   * A flag that decides whether an endpoint capable of forging signed provider
+   * requests exists must not be derived from a signal that lies.
+   *
+   * OFF by default, so a deployment that says nothing gets the safe answer.
+   * The repository's own compose file turns it on, because the whole point of
+   * this deployment is to be demonstrated.
+   */
+  SANDBOX_SIMULATOR_ENABLED: z
+    .enum(['true', 'false'])
+    .default('false')
+    .transform((value) => value === 'true'),
 });
+
+/**
+ * Strict base64 decode.
+ *
+ * `Buffer.from(value, 'base64')` silently ignores anything it cannot parse, so
+ * a 4-character typo decodes to 3 bytes instead of failing - and the error
+ * would surface as "key must be 32 bytes" rather than "that is not base64".
+ * Re-encoding and comparing is what makes the check mean what it says.
+ */
+function decodeBase64Key(value: string): Buffer | null {
+  if (!/^[A-Za-z0-9+/]+={0,2}$/u.test(value)) {
+    return null;
+  }
+
+  const decoded = Buffer.from(value, 'base64');
+
+  // Round-trip. Node's decoder DISCARDS characters it cannot parse rather
+  // than failing, so without this a key with a typo in it would decode to a
+  // shorter one and the error would say "must be 32 bytes" when the real
+  // problem is "that is not base64".
+  return decoded.toString('base64') === value ? decoded : null;
+}
 
 export type Env = z.infer<typeof envSchema>;
 

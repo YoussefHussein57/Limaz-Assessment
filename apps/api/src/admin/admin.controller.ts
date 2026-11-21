@@ -24,6 +24,11 @@ import type {
   ManagerSummary,
 } from './admin.types';
 import { createCompanySchema, createManagerSchema, listCompaniesSchema } from './dto/admin.dto';
+import type {
+  ProvisionedWebhookIntegration,
+  WebhookIntegrationState,
+} from '../webhooks/webhook-integration.service';
+import { WebhookIntegrationService } from '../webhooks/webhook-integration.service';
 
 /**
  * Platform administration.
@@ -63,6 +68,7 @@ export class AdminController {
     private readonly companies: CompanyAdminService,
     private readonly apiKeys: ApiKeyAdminService,
     private readonly managers: ManagerAdminService,
+    private readonly webhooks: WebhookIntegrationService,
   ) {}
 
   @Get('companies')
@@ -152,6 +158,46 @@ export class AdminController {
     assertUuid(keyId, 'keyId');
 
     return this.apiKeys.rotate(companyId, keyId);
+  }
+
+  // ---------------------------------------------------------------------------
+  // Card webhook integration (F12)
+  //
+  // Two routes, and the asymmetry between them is the security story. Reading
+  // returns metadata only - a delivery id, a version, two timestamps - and
+  // reading it a thousand times reveals nothing. Writing MINTS A SIGNING
+  // SECRET and returns it once, which is why it alone carries `no-store`.
+  // ---------------------------------------------------------------------------
+
+  @Get('companies/:companyId/webhook-integration')
+  async describeWebhookIntegration(
+    @Param('companyId') companyId: string,
+  ): Promise<WebhookIntegrationState> {
+    assertUuid(companyId, 'companyId');
+
+    return this.webhooks.describe(companyId);
+  }
+
+  /**
+   * Creates the integration, or replaces its signing secret.
+   *
+   * One route for both, because they are the same operation: mint a secret
+   * and store it. A separate "rotate" would differ only in whether a row
+   * already existed, which is a detail of this database rather than something
+   * the caller should have to know.
+   *
+   * `no-store`: this is the only response in F12 that carries a plaintext
+   * credential, for the same reason the three key routes above do.
+   */
+  @Post('companies/:companyId/webhook-integration')
+  @Header('Cache-Control', 'no-store')
+  @HttpCode(HttpStatus.OK)
+  async provisionWebhookIntegration(
+    @Param('companyId') companyId: string,
+  ): Promise<ProvisionedWebhookIntegration> {
+    assertUuid(companyId, 'companyId');
+
+    return this.webhooks.provision(companyId);
   }
 
   // ---------------------------------------------------------------------------

@@ -7,7 +7,7 @@ import {
   Logger,
   UnprocessableEntityException,
 } from '@nestjs/common';
-import type { Company, Expense, Policy, Prisma, RuleHit } from '@prisma/client';
+import type { Company, Expense, ExpenseSource, Policy, Prisma, RuleHit } from '@prisma/client';
 import { PrismaService } from '../prisma/prisma.service';
 import { normaliseExpense, payloadHashOf, type NormalisedExpense } from './canonical-payload';
 import type { SubmitExpenseDto } from './dto/submit-expense.dto';
@@ -47,7 +47,21 @@ export class ExpenseSubmissionService {
     @Inject(FREQUENCY_LOCK) private readonly lock: FrequencyLock,
   ) {}
 
-  async submit(companyId: string, dto: SubmitExpenseDto): Promise<SubmissionResult> {
+  /**
+   * @param source Which namespace this expense’s `externalId` lives in.
+   *
+   * Defaulted to `API`, so every existing caller is unchanged. The card
+   * webhook passes `CARD_WEBHOOK`, which gives provider transaction ids
+   * their own namespace: an ordinary client can choose any `externalId` it
+   * likes, including one that looks like a transaction id, and a prefix
+   * convention cannot prevent that because the client picks the whole
+   * string. The source is part of the unique key instead.
+   */
+  async submit(
+    companyId: string,
+    dto: SubmitExpenseDto,
+    source: ExpenseSource = 'API',
+  ): Promise<SubmissionResult> {
     const normalised = normaliseExpense({
       employeeId: dto.employeeId,
       amountMinor: dto.amount,
@@ -60,12 +74,12 @@ export class ExpenseSubmissionService {
     const payloadHash = payloadHashOf(normalised);
 
     try {
-      return await this.runSubmission(companyId, dto.externalId, normalised, payloadHash);
+      return await this.runSubmission(companyId, dto.externalId, normalised, payloadHash, source);
     } catch (error) {
       // The INSERT lost a race. The transaction is already rolled back, so the
       // winner is read on a fresh connection - see resolveLostRace().
       if (isExpenseIdempotencyConflict(error)) {
-        return this.resolveLostRace(companyId, dto.externalId, payloadHash);
+        return this.resolveLostRace(companyId, dto.externalId, payloadHash, source);
       }
 
       throw error;
@@ -77,6 +91,7 @@ export class ExpenseSubmissionService {
     externalId: string,
     normalised: NormalisedExpense,
     payloadHash: string,
+    source: ExpenseSource,
   ): Promise<SubmissionResult> {
     return this.prisma.$transaction(async (tx) => {
       // ---------------------------------------------------------------------
@@ -114,7 +129,7 @@ export class ExpenseSubmissionService {
       // the request reaching here is known to be well-formed.
       // ---------------------------------------------------------------------
       const existing = await tx.expense.findUnique({
-        where: { companyId_externalId: { companyId, externalId } },
+        where: { companyId_source_externalId: { companyId, source, externalId } },
         include: { ruleHits: true },
       });
 
@@ -163,6 +178,7 @@ export class ExpenseSubmissionService {
         data: {
           companyId,
           externalId,
+          source,
           employeeId: normalised.employeeId,
           amountMinor: normalised.amountMinor,
           currency: normalised.currency,
@@ -227,9 +243,10 @@ export class ExpenseSubmissionService {
     companyId: string,
     externalId: string,
     payloadHash: string,
+    source: ExpenseSource,
   ): Promise<SubmissionResult> {
     const winner = await this.prisma.expense.findUnique({
-      where: { companyId_externalId: { companyId, externalId } },
+      where: { companyId_source_externalId: { companyId, source, externalId } },
       include: { ruleHits: true },
     });
 

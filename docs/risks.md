@@ -651,14 +651,55 @@ network failure cannot mint a second credential by itself.
 | **Automated verification** | None, deliberately - there is no behaviour to assert. The absence is documented, and F11-T13 pins the related property that no response ever carries a password or a hash |
 | **Status** | `ACCEPTED` - scoped out, stated where a person sees it |
 
+### R-35 - Webhook signing secrets are encrypted, not hashed
+
+| | |
+|---|---|
+| **Component** | `WebhookIntegration`, `webhook-crypto.ts` |
+| **Description** | Every other credential in this system is stored as a one-way hash. A webhook signing secret cannot be: HMAC verification needs the **key material**, because the provider sends a MAC computed with the secret rather than the secret itself. There is no digest that can stand in - HMAC keyed with `sha256(secret)` is a different function and would never match. So the secret is stored **reversibly** |
+| **What protects it** | AES-256-GCM, with the key in `WEBHOOK_ENCRYPTION_KEY` - process configuration, never the database. A stolen dump is inert on its own; an attacker needs both. GCM is authenticated, so a tampered row fails to decrypt rather than silently yielding a different key, and the **company id is the additional authenticated data**, so a secret moved between rows fails too (F12-U13, F12-U14) |
+| **Likelihood** | Not an event - it is a property of the design, present from the first deployment |
+| **Impact** | High **if both** the database and the configuration are compromised: an attacker could forge signed events as any company. Each of those alone yields nothing usable |
+| **Severity** | **Medium** - the impact is high, the precondition is two independent compromises rather than one |
+| **Mitigation** | The key is required in every environment with no default, so a deployment that forgets it refuses to start rather than falling back to something weak. The compose file's development key is labelled as such in place. `F12-T03` asserts no plaintext is in the column; `F12-T02` asserts no response carries the secret, the ciphertext, the IV or the tag |
+| **Residual hole** | The whole of it, by construction. The correct production answer is an external KMS or HSM, where the key never enters the application process at all - an entire subsystem the assessment does not ask for |
+| **Status** | `ACCEPTED` - stated as weaker than hashing rather than presented as equivalent |
+
+### R-37 - The retry backoff has no jitter, and there is one worker
+
+| | |
+|---|---|
+| **Component** | `WebhookProcessorService.backoffMs`, `WebhookWorkerService` |
+| **Description** | Failed events back off exponentially - 2s, 4s, 8s, 16s, 32s, capped at five minutes - with **no randomisation**. A thousand events failing together would retry together. The worker also runs inside the API process rather than separately, so queue work competes with request handling |
+| **Why it is acceptable here** | Jitter spreads a herd. With one worker, a `BATCH_SIZE` of 20 and an inbox measured in tens of rows, the herd does not exist - the claim loop already serialises the retries it issues. Adding jitter would be machinery for a contention pattern this deployment cannot produce |
+| **Likelihood** | Only at a volume this deployment does not see |
+| **Impact** | Low here. At scale, a synchronised retry storm against a database that is already struggling - which is how a brief outage becomes a long one |
+| **Severity** | **Low** |
+| **Mitigation** | Attempts are bounded (`WEBHOOK_MAX_ATTEMPTS`), the batch is bounded, and the poll interval has a floor so a misconfiguration cannot busy-loop |
+| **Upgrade path** | Full jitter on the backoff, and the worker as its own process reading the same table - which needs no code change, because the claim is already safe for several workers (F12-T73) |
+| **Status** | `ACCEPTED` - a scale limitation, named rather than designed around prematurely |
+
+### R-38 - An event the provider never delivered leaves no trace
+
+| | |
+|---|---|
+| **Component** | The absence of a reconciliation path |
+| **Description** | The assessment asks how you would find events the provider never sent. **This system cannot, on its own.** An event that never arrived leaves nothing here, and nothing in this repository reconciles against the provider |
+| **Why it was not built** | It needs a provider API that this integration does not have - a "list transactions in a window" endpoint - and inventing one would be fabricating a contract |
+| **Likelihood** | Certain over a long enough period. Providers drop deliveries |
+| **Impact** | Medium - an expense that was never submitted is silently missing. Nothing is wrong; something is absent, which is harder to notice |
+| **Severity** | **Medium** |
+| **Mitigation** | None implemented. The gap is **answered in full** in the README and in [F12-card-webhook.md](../features/F12-card-webhook.md) §9, with the three approaches ranked by cost: an id-gap check (only if ids are sequential, which the assessment's `evt_8f2c1` gives no reason to think), a reconciliation job against a provider listing API (the real answer), and a liveness alert on companies that have gone quiet (cheap, weak, genuinely useful) |
+| **Status** | `ACCEPTED` - an explained gap, which is what the assessment asks for here rather than an implementation |
+
 ## Summary
 
 | Severity | Open | In progress | Mitigated | Accepted |
 |---|---|---|---|---|
 | Critical | - | - | R-01, R-02, R-03, R-05, R-10, R-21 | R-20 |
 | High | R-06, R-15 | - | R-04, R-07, R-08, R-12, R-14 | R-18, R-24, R-26 |
-| Medium | R-13 | - | R-16 | R-11, R-17, R-19, R-22, R-23, R-25, R-27 |
-| Low | - | - | **R-29** | R-09, R-28, R-30, R-31, **R-33**, **R-36** |
+| Medium | R-13 | - | R-16 | R-11, R-17, R-19, R-22, R-23, R-25, R-27, **R-35**, **R-38** |
+| Low | - | - | **R-29** | R-09, R-28, R-30, R-31, **R-33**, **R-36**, **R-37** |
 
 **Closed:** R-32, by F11. It is no longer an accepted limitation - the gap it
 described does not exist any more, and the evidence is named in its entry.
@@ -683,3 +724,4 @@ described does not exist any more, and the evidence is named in its entry.
 | 2026-11-21 | F07 completed | **R-31 added and accepted**: concurrent policy edits are last-write-wins, narrowed to the changed field by sending a partial PATCH. R-01 re-verified on the two policy endpoints (F07-B08 to B12). R-04 re-checked: F07 added no resolution path of its own and ADR-004 semantics are unchanged - the conflict case is now exercised through the UI with two independent sessions (F07-F10). R-23 unchanged: the resolution and policy flows are browser-verified and recorded as such |
 | 2026-11-21 | F08 completed | **R-32 and R-33 added and accepted**, both surfaced in the interface rather than only in this register. R-08 (API key handling) moved to `MITIGATED` with measured evidence: the plaintext appears nowhere in the table (F08-B20), no response carries a hash (F08-B22), the lifecycle is enforced inside the authentication WHERE clause (F08-B29 to B31, B36), and two concurrent rotations produce exactly one winner (F08-B34). R-01 re-verified on the one module that is deliberately NOT tenant-scoped: the company id is a selector applied after the role check, and a mismatched company/key pair mutates nothing (F08-B32, B38) |
 | 2026-11-21 | F11 completed | **R-32 CLOSED**, not re-accepted: manager provisioning exists, and F11-T22 proves it by signing in as an account created through the API and resolving a real review. **R-36 added and accepted** - the gap F11 deliberately did not close, which is password change and reset. R-01 re-verified on the two new routes: `role` and `companyId` are written by the server and absent from a `.strict()` schema, so a body claiming either is a 400 that creates nothing (F11-T10, F11-T11), and a provisioned manager can reach neither another company's data nor platform administration (F11-T16, F11-T16b) |
+| 2026-11-21 | F12 completed | The assessment's optional card webhook bonus. **R-35, R-37 and R-38 added and accepted**, each naming what it costs rather than what it avoids: a signing secret that must be reversible because HMAC needs key material, a backoff with no jitter at a scale that has no herd, and the absence of any way to find an event the provider never sent. R-01 re-verified on an entirely new authentication path: the company comes from the integration whose secret verified the signature, the body has no company field to ignore, and an attacker naming another company's delivery id is checked against a secret they do not hold (F12-T17, F12-T40 to T42, F12-T90). R-22 (the credential redactor) gained a new consumer - the worker's `lastError` is sanitised where it is written, because it is rendered in an administrator's browser (F12-T80) |
